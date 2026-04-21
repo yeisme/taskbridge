@@ -19,7 +19,7 @@ ARG VERSION=dev
 ARG COMMIT=none
 ARG DATE=unknown
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
+    -ldflags="-s -w -X github.com/yeisme/taskbridge/pkg/buildinfo.Version=${VERSION} -X github.com/yeisme/taskbridge/pkg/buildinfo.GitCommit=${COMMIT} -X github.com/yeisme/taskbridge/pkg/buildinfo.BuildDate=${DATE}" \
     -o taskbridge .
 
 # Runtime stage
@@ -50,7 +50,7 @@ USER taskbridge
 ENV TASKBRIDGE_CONFIG=/app/configs/config.yaml \
     TZ=Asia/Shanghai
 
-# Expose port (for MCP TCP mode)
+# Expose port (for health checks or future service endpoints)
 EXPOSE 8080
 
 # Health check
@@ -59,8 +59,8 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Labels
 LABEL org.opencontainers.image.title="TaskBridge" \
-      org.opencontainers.image.description="TaskBridge MCP Server" \
-      org.opencontainers.image.source="https://github.com/taskbridge/taskbridge-mcp"
+      org.opencontainers.image.description="TaskBridge CLI for AI-assisted multi-provider task workflows" \
+      org.opencontainers.image.source="https://github.com/yeisme/taskbridge"
 
 # Entry point
 ENTRYPOINT ["./taskbridge"]

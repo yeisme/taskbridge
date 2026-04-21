@@ -349,10 +349,9 @@ taskbridge auth login <provider>
 完整的配置文件 `~/.taskbridge/config.yaml`：
 
 ```yaml
-mcp:
+intelligence:
   enabled: true
-  transport: stdio
-  port: 14940
+  timezone: Asia/Shanghai
 
 providers:
   microsoft:

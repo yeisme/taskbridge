@@ -71,3 +71,4 @@ coverage.html
 # Local agent metadata
 .kilocode/
 .kilocodemodes
+.omx/

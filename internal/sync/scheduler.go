@@ -18,7 +18,11 @@ import (
 // SchedulerConfig 调度器配置
 type SchedulerConfig struct {
 	// Cron 表达式，如 "0 */5 * * * *" 表示每5分钟执行一次
-	CronExpression string `json:"cron_expression"`
+	// 与 Interval 互斥：两者只能设置一个
+	CronExpression string `json:"cron_expression,omitempty"`
+	// 固定间隔调度，如 5 * time.Minute
+	// 与 CronExpression 互斥：两者只能设置一个
+	Interval time.Duration `json:"interval,omitempty"`
 	// 同步方向
 	Direction Direction `json:"direction"`
 	// 要同步的 Provider 列表，为空则同步所有
@@ -33,6 +37,28 @@ type SchedulerConfig struct {
 	ConflictResolve string `json:"conflict_resolve"`
 	// 是否删除远程多余任务
 	DeleteRemote bool `json:"delete_remote"`
+}
+
+// Validate 验证调度器配置，确保 CronExpression 和 Interval 互斥
+func (c SchedulerConfig) Validate() error {
+	hasCron := c.CronExpression != ""
+	hasInterval := c.Interval > 0
+
+	if hasCron && hasInterval {
+		return fmt.Errorf("scheduler config: CronExpression and Interval are mutually exclusive, got both")
+	}
+	if !hasCron && !hasInterval {
+		return fmt.Errorf("scheduler config: either CronExpression or Interval must be set")
+	}
+	if hasInterval && c.Interval <= 0 {
+		return fmt.Errorf("scheduler config: Interval must be greater than 0, got %s", c.Interval)
+	}
+	return nil
+}
+
+// IsIntervalMode 返回是否为固定间隔模式
+func (c SchedulerConfig) IsIntervalMode() bool {
+	return c.Interval > 0
 }
 
 // SchedulerStats 调度器统计
@@ -65,7 +91,7 @@ type Scheduler struct {
 	config SchedulerConfig
 	// engine 同步引擎
 	engine *Engine
-	// cron Cron 调度器实例
+	// cron Cron 调度器实例（CronExpression 模式）
 	cron *cron.Cron
 	// storage 存储接口
 	storage storage.Storage
@@ -77,8 +103,16 @@ type Scheduler struct {
 	mu sync.RWMutex
 	// running 是否正在运行
 	running bool
-	// entryID Cron 任务 ID
+	// entryID Cron 任务 ID（CronExpression 模式）
 	entryID cron.EntryID
+
+	// Interval 模式字段
+	// ticker 固定间隔定时器
+	ticker *time.Ticker
+	// cancelFunc 用于停止 interval goroutine
+	cancelFunc context.CancelFunc
+	// lastRunStart 上次运行开始时间（用于计算 NextRunTime）
+	lastRunStart time.Time
 }
 
 // NewScheduler 创建调度器
@@ -94,17 +128,27 @@ func NewScheduler(config SchedulerConfig, providers map[string]provider.Provider
 		config.ConflictResolve = "newer"
 	}
 
-	return &Scheduler{
+	s := &Scheduler{
 		config:    config,
 		engine:    NewEngine(providers, store),
 		storage:   store,
 		providers: providers,
-		cron:      cron.New(cron.WithSeconds(), cron.WithLocation(time.Local)),
 	}
+
+	// 仅 CronExpression 模式需要 cron 实例
+	if !config.IsIntervalMode() {
+		s.cron = cron.New(cron.WithSeconds(), cron.WithLocation(time.Local))
+	}
+
+	return s
 }
 
 // Start 启动调度器
 func (s *Scheduler) Start(ctx context.Context) error {
+	if err := s.config.Validate(); err != nil {
+		return err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -112,13 +156,22 @@ func (s *Scheduler) Start(ctx context.Context) error {
 		return fmt.Errorf("scheduler is already running")
 	}
 
-	// 解析 cron 表达式
-	schedule, err := cron.ParseStandard(s.config.CronExpression)
+	if s.config.IsIntervalMode() {
+		return s.startInterval(ctx)
+	}
+	return s.startCron(ctx)
+}
+
+// startCron 使用 CronExpression 模式启动
+func (s *Scheduler) startCron(ctx context.Context) error {
+	parser := cron.NewParser(
+		cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
+	)
+	schedule, err := parser.Parse(s.config.CronExpression)
 	if err != nil {
 		return fmt.Errorf("invalid cron expression: %w", err)
 	}
 
-	// 添加定时任务
 	s.entryID = s.cron.Schedule(schedule, cron.FuncJob(func() {
 		s.runSync(ctx)
 	}))
@@ -135,6 +188,39 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	return nil
 }
 
+// startInterval 使用 Interval 模式启动
+func (s *Scheduler) startInterval(ctx context.Context) error {
+	intervalCtx, cancel := context.WithCancel(ctx)
+	s.cancelFunc = cancel
+	ticker := time.NewTicker(s.config.Interval)
+	s.ticker = ticker
+	s.running = true
+
+	s.lastRunStart = time.Now()
+
+	log.Info().
+		Dur("interval", s.config.Interval).
+		Bool("incremental", s.config.Incremental).
+		Int("max_retries", s.config.MaxRetries).
+		Msg("同步调度器已启动 (interval 模式)")
+
+	go func() {
+		for {
+			select {
+			case <-intervalCtx.Done():
+				return
+			case <-ticker.C:
+				s.mu.Lock()
+				s.lastRunStart = time.Now()
+				s.mu.Unlock()
+				s.runSync(intervalCtx)
+			}
+		}
+	}()
+
+	return nil
+}
+
 // Stop 停止调度器
 func (s *Scheduler) Stop() error {
 	s.mu.Lock()
@@ -144,8 +230,19 @@ func (s *Scheduler) Stop() error {
 		return nil
 	}
 
-	ctx := s.cron.Stop()
-	<-ctx.Done()
+	if s.config.IsIntervalMode() {
+		if s.ticker != nil {
+			s.ticker.Stop()
+			s.ticker = nil
+		}
+		if s.cancelFunc != nil {
+			s.cancelFunc()
+			s.cancelFunc = nil
+		}
+	} else if s.cron != nil {
+		ctx := s.cron.Stop()
+		<-ctx.Done()
+	}
 
 	s.running = false
 	log.Info().Msg("同步调度器已停止")
@@ -169,13 +266,18 @@ func (s *Scheduler) GetStats() SchedulerStats {
 
 // Trigger 手动触发一次同步
 func (s *Scheduler) Trigger(ctx context.Context) (*Result, error) {
-	return s.runSyncWithRetry(ctx)
+	result, err := s.runSyncWithRetry(ctx)
+	s.recordRunResult(result, err)
+	return result, err
 }
 
 // runSync 执行同步（定时任务入口）
 func (s *Scheduler) runSync(ctx context.Context) {
 	result, err := s.runSyncWithRetry(ctx)
+	s.recordRunResult(result, err)
+}
 
+func (s *Scheduler) recordRunResult(result *Result, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -186,7 +288,7 @@ func (s *Scheduler) runSync(ctx context.Context) {
 		s.stats.FailedRuns++
 		s.stats.LastRunStatus = "failed"
 		log.Error().Err(err).Msg("定时同步失败")
-	} else {
+	} else if result != nil {
 		s.stats.SuccessRuns++
 		s.stats.LastRunStatus = "success"
 		s.stats.TotalPulled += result.Pulled
@@ -203,7 +305,6 @@ func (s *Scheduler) runSync(ctx context.Context) {
 			Msg("定时同步完成")
 	}
 
-	// 更新平均运行时间
 	if s.stats.TotalRuns > 0 {
 		totalRuntime := s.stats.AverageRuntime * time.Duration(s.stats.TotalRuns-1)
 		if s.stats.LastRunResult != nil {
@@ -371,7 +472,18 @@ func (s *Scheduler) NextRunTime() time.Time {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if !s.running || s.entryID == 0 {
+	if !s.running {
+		return time.Time{}
+	}
+
+	if s.config.IsIntervalMode() {
+		if s.lastRunStart.IsZero() {
+			return time.Time{}
+		}
+		return s.lastRunStart.Add(s.config.Interval)
+	}
+
+	if s.entryID == 0 || s.cron == nil {
 		return time.Time{}
 	}
 
@@ -381,6 +493,10 @@ func (s *Scheduler) NextRunTime() time.Time {
 
 // UpdateConfig 更新调度器配置
 func (s *Scheduler) UpdateConfig(config SchedulerConfig) error {
+	if err := config.Validate(); err != nil {
+		return err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -388,13 +504,35 @@ func (s *Scheduler) UpdateConfig(config SchedulerConfig) error {
 
 	// 如果正在运行，先停止
 	if s.running {
-		ctx := s.cron.Stop()
-		<-ctx.Done()
+		if s.config.IsIntervalMode() {
+			if s.ticker != nil {
+				s.ticker.Stop()
+				s.ticker = nil
+			}
+			if s.cancelFunc != nil {
+				s.cancelFunc()
+				s.cancelFunc = nil
+			}
+		} else if s.cron != nil {
+			ctx := s.cron.Stop()
+			<-ctx.Done()
+		}
 		s.running = false
 	}
 
 	// 更新配置
+	oldMode := s.config.IsIntervalMode()
 	s.config = config
+	newMode := s.config.IsIntervalMode()
+
+	// 如果模式切换了，需要重建 cron 实例
+	if oldMode != newMode {
+		if newMode {
+			s.cron = nil
+		} else {
+			s.cron = cron.New(cron.WithSeconds(), cron.WithLocation(time.Local))
+		}
+	}
 
 	// 如果之前在运行，重新启动
 	if wasRunning {

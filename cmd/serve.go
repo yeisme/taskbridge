@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,13 +13,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/yeisme/taskbridge/internal/auth"
-	"github.com/yeisme/taskbridge/internal/provider/feishu"
-	"github.com/yeisme/taskbridge/internal/provider/google"
-	microsoft "github.com/yeisme/taskbridge/internal/provider/microsoft"
-	"github.com/yeisme/taskbridge/internal/provider/ticktick"
-	"github.com/yeisme/taskbridge/internal/provider/todoist"
-	"github.com/yeisme/taskbridge/pkg/paths"
-	"github.com/yeisme/taskbridge/pkg/tokenstore"
+	"github.com/yeisme/taskbridge/internal/loader"
+	"github.com/yeisme/taskbridge/internal/storage/filestore"
+	syncengine "github.com/yeisme/taskbridge/internal/sync"
 )
 
 // serveCmd 后台服务命令
@@ -29,20 +27,16 @@ var serveCmd = &cobra.Command{
 功能:
   - Token 自动刷新（防止过期）
   - 定时同步任务
-  - MCP Server（可选）
   - 健康检查（可选）
 
 示例:
   taskbridge serve                    # 启动服务（默认配置）
-  taskbridge serve --enable-mcp       # 启用 MCP Server
   taskbridge serve --check-interval 2m # 设置检查间隔为 2 分钟`,
 	Run: runServe,
 }
 
 var (
 	// 服务配置
-	serveEnableMCP         bool
-	serveMCPPort           int
 	serveCheckInterval     string
 	serveEnableSync        bool
 	serveSyncInterval      string
@@ -54,10 +48,6 @@ var (
 
 func init() {
 	rootCmd.AddCommand(serveCmd)
-
-	// MCP 配置
-	serveCmd.Flags().BoolVar(&serveEnableMCP, "enable-mcp", false, "启用 MCP Server")
-	serveCmd.Flags().IntVar(&serveMCPPort, "mcp-port", 0, "MCP Server 端口（默认使用 stdio）")
 
 	// Token 刷新配置
 	serveCmd.Flags().BoolVar(&serveEnableAutoRefresh, "enable-auto-refresh", true, "启用 Token 自动刷新")
@@ -98,8 +88,8 @@ func runServe(cmd *cobra.Command, args []string) {
 		RetryInterval: 30 * time.Second,
 	})
 
-	// 注册 Provider
-	registerProviders(tokenManager)
+	loadResult := loadProvidersWithStatus("")
+	registerProviders(tokenManager, loadResult)
 
 	// 设置刷新回调
 	tokenManager.SetOnRefreshCallback(func(provider string, err error) {
@@ -114,6 +104,30 @@ func runServe(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	var scheduler *syncengine.Scheduler
+	if serveEnableSync && len(loadResult.Providers) > 0 {
+		syncInterval, err := time.ParseDuration(serveSyncInterval)
+		if err != nil {
+			fmt.Printf("❌ 无效的同步间隔: %v\n", err)
+			os.Exit(1)
+		}
+
+		store, err := filestore.New(cfg.Storage.Path, cfg.Storage.File.Format)
+		if err != nil {
+			fmt.Printf("❌ 初始化同步存储失败: %v\n", err)
+			os.Exit(1)
+		}
+
+		scheduler = syncengine.NewScheduler(syncengine.SchedulerConfig{
+			Interval:        syncInterval,
+			Direction:       syncengine.DirectionBidirectional,
+			Incremental:     true,
+			MaxRetries:      3,
+			RetryInterval:   30 * time.Second,
+			ConflictResolve: "newer",
+		}, loadResult.Providers, store)
+	}
+
 	// 启动 Token 自动刷新
 	if serveEnableAutoRefresh {
 		if err := tokenManager.Start(ctx); err != nil {
@@ -126,24 +140,21 @@ func runServe(cmd *cobra.Command, args []string) {
 	// 显示当前 Token 状态
 	printTokenStatus(tokenManager)
 
-	// 启动 MCP Server（如果启用）
-	if serveEnableMCP {
-		go startMCPServer(ctx)
+	if scheduler != nil {
+		if err := scheduler.Start(ctx); err != nil {
+			fmt.Printf("❌ 启动定时同步失败: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("🔄 定时同步已启用 (间隔: %s)\n", serveSyncInterval)
+	} else if serveEnableSync {
+		fmt.Println("⚠️ 未找到可用已认证 Provider，定时同步未启动")
 	}
 
 	// 启动健康检查（如果启用）
 	if serveEnableHealth {
-		go startHealthCheck(ctx, serveHealthPort, tokenManager)
-	}
-
-	// 启动定时同步（如果启用）
-	if serveEnableSync {
-		syncInterval, err := time.ParseDuration(serveSyncInterval)
-		if err != nil {
-			fmt.Printf("❌ 无效的同步间隔: %v\n", err)
-			os.Exit(1)
-		}
-		go startPeriodicSync(ctx, syncInterval)
+		go startHealthCheck(ctx, serveHealthPort, func() *HealthResponse {
+			return buildHealthResponse(tokenManager, loadResult, scheduler, serveSyncInterval)
+		})
 	}
 
 	fmt.Println("\n📋 服务已启动，按 Ctrl+C 停止")
@@ -158,195 +169,27 @@ func runServe(cmd *cobra.Command, args []string) {
 
 	// 停止 Token 管理器
 	tokenManager.Stop()
+	if scheduler != nil {
+		_ = scheduler.Stop()
+	}
 
 	fmt.Println("👋 服务已停止")
 }
 
-// registerProviders 注册所有 Provider
-func registerProviders(tm *auth.TokenManager) {
-	// 注册 Google Provider
-	if googleProvider, err := createGoogleProvider(); err == nil {
-		tm.RegisterProvider(googleProvider)
-		fmt.Printf("✅ 已注册 Provider: %s\n", googleProvider.DisplayName())
-	} else {
-		fmt.Printf("⚠️ Google Provider 未配置: %v\n", err)
+// registerProviders 注册所有已成功加载的 Provider，并输出所有 Provider 状态。
+func registerProviders(tm *auth.TokenManager, result *loader.ProviderLoadResult) {
+	for name, status := range result.Statuses {
+		if providerImpl, ok := result.Providers[name]; ok {
+			tm.RegisterProvider(providerImpl)
+			fmt.Printf("✅ 已注册 Provider: %s\n", providerImpl.DisplayName())
+			continue
+		}
+		if status != nil && status.Error != "" {
+			fmt.Printf("⚠️ %s Provider 未就绪: %s\n", name, status.Error)
+		} else {
+			fmt.Printf("⚠️ %s Provider 未就绪\n", name)
+		}
 	}
-
-	// 注册 Microsoft Provider
-	if msProvider, err := createMicrosoftProvider(); err == nil {
-		tm.RegisterProvider(msProvider)
-		fmt.Printf("✅ 已注册 Provider: %s\n", msProvider.DisplayName())
-	} else {
-		fmt.Printf("⚠️ Microsoft Provider 未配置: %v\n", err)
-	}
-
-	// 注册 Todoist Provider
-	if todoProvider, err := createTodoistProvider(); err == nil {
-		tm.RegisterProvider(todoProvider)
-		fmt.Printf("✅ 已注册 Provider: %s\n", todoProvider.DisplayName())
-	} else {
-		fmt.Printf("⚠️ Todoist Provider 未配置: %v\n", err)
-	}
-
-	// 注册 Feishu Provider
-	if feishuProvider, err := createFeishuProvider(); err == nil {
-		tm.RegisterProvider(feishuProvider)
-		fmt.Printf("✅ 已注册 Provider: %s\n", feishuProvider.DisplayName())
-	} else {
-		fmt.Printf("⚠️ Feishu Provider 未配置: %v\n", err)
-	}
-
-	// 注册 TickTick Provider
-	if tickProvider, err := createTickTickProvider(); err == nil {
-		tm.RegisterProvider(tickProvider)
-		fmt.Printf("✅ 已注册 Provider: %s\n", tickProvider.DisplayName())
-	} else {
-		fmt.Printf("⚠️ TickTick Provider 未配置: %v\n", err)
-	}
-	// 注册 Dida Provider
-	if didaProvider, err := createDidaProvider(); err == nil {
-		tm.RegisterProvider(didaProvider)
-		fmt.Printf("✅ 已注册 Provider: %s\n", didaProvider.DisplayName())
-	} else {
-		fmt.Printf("⚠️ Dida Provider 未配置: %v\n", err)
-	}
-}
-
-// createGoogleProvider 创建 Google Provider
-func createGoogleProvider() (*google.Provider, error) {
-	credentialsPath := paths.GetCredentialsPath("google")
-	if _, err := os.Stat(credentialsPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("凭证文件不存在")
-	}
-
-	provider, err := google.NewProvider(google.Config{
-		CredentialsFile: credentialsPath,
-		TokenFile:       paths.GetTokenPath("google"),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// 尝试加载 token
-	if err := provider.Authenticate(context.Background(), nil); err != nil {
-		return nil, fmt.Errorf("认证失败: %w", err)
-	}
-
-	return provider, nil
-}
-
-// createMicrosoftProvider 创建 Microsoft Provider
-func createMicrosoftProvider() (*microsoft.Provider, error) {
-	credentialsPath := paths.GetCredentialsPath("microsoft")
-	if _, err := os.Stat(credentialsPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("凭证文件不存在")
-	}
-
-	provider, err := microsoft.NewProvider(microsoft.Config{
-		CredentialsFile: credentialsPath,
-		TokenFile:       paths.GetTokenPath("microsoft"),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// 尝试加载 token
-	if err := provider.Authenticate(context.Background(), nil); err != nil {
-		return nil, fmt.Errorf("认证失败: %w", err)
-	}
-
-	return provider, nil
-}
-
-// createTodoistProvider 创建 Todoist Provider
-func createTodoistProvider() (*todoist.Provider, error) {
-	tokenPath := paths.GetTokenPath("todoist")
-	hasToken, err := tokenstore.Has(tokenPath, "todoist")
-	if err != nil {
-		return nil, err
-	}
-	if !hasToken {
-		return nil, fmt.Errorf("token 文件不存在")
-	}
-
-	p, err := todoist.NewProvider(todoist.Config{
-		TokenFile: tokenPath,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if err := p.Authenticate(context.Background(), nil); err != nil {
-		return nil, fmt.Errorf("认证失败: %w", err)
-	}
-	return p, nil
-}
-
-// createFeishuProvider 创建 Feishu Provider
-func createFeishuProvider() (*feishu.Provider, error) {
-	credentialsPath := paths.GetCredentialsPath("feishu")
-	if _, err := os.Stat(credentialsPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("凭证文件不存在")
-	}
-
-	p, err := feishu.NewProvider(feishu.Config{
-		CredentialsFile: credentialsPath,
-		TokenFile:       paths.GetTokenPath("feishu"),
-	})
-	if err != nil {
-		return nil, err
-	}
-	if err := p.Authenticate(context.Background(), nil); err != nil {
-		return nil, fmt.Errorf("认证失败: %w", err)
-	}
-	return p, nil
-}
-
-// createTickTickProvider 创建 TickTick Provider
-func createTickTickProvider() (*ticktick.Provider, error) {
-	tokenPath := paths.GetTokenPath("ticktick")
-	hasToken, err := tokenstore.Has(tokenPath, "ticktick")
-	if err != nil {
-		return nil, err
-	}
-	if !hasToken {
-		return nil, fmt.Errorf("token 文件不存在")
-	}
-
-	p, err := ticktick.NewProvider(ticktick.Config{
-		ProviderName: "ticktick",
-		TokenFile:    tokenPath,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if err := p.Authenticate(context.Background(), nil); err != nil {
-		return nil, fmt.Errorf("认证失败: %w", err)
-	}
-	return p, nil
-}
-
-// createDidaProvider 创建 Dida Provider
-func createDidaProvider() (*ticktick.Provider, error) {
-	tokenPath := paths.GetTokenPath("dida")
-	hasToken, err := tokenstore.Has(tokenPath, "dida")
-	if err != nil {
-		return nil, err
-	}
-	if !hasToken {
-		return nil, fmt.Errorf("token 文件不存在")
-	}
-
-	p, err := ticktick.NewProvider(ticktick.Config{
-		ProviderName: "dida",
-		TokenFile:    tokenPath,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if err := p.Authenticate(context.Background(), nil); err != nil {
-		return nil, fmt.Errorf("认证失败: %w", err)
-	}
-	return p, nil
 }
 
 // printTokenStatus 打印 Token 状态
@@ -383,21 +226,142 @@ func printTokenStatus(tm *auth.TokenManager) {
 	fmt.Println("└────────────┴─────────┴─────────────────────┴──────────────┘")
 }
 
-// startMCPServer 启动 MCP Server
-func startMCPServer(ctx context.Context) {
-	fmt.Println("🔧 MCP Server 启动中...")
-	// TODO: 实现 MCP Server 启动逻辑
-	fmt.Println("✅ MCP Server 已启动")
+type ProviderHealthStatus struct {
+	Loaded        bool   `json:"loaded"`
+	Authenticated bool   `json:"authenticated"`
+	Error         string `json:"error,omitempty"`
 }
+
+type TokenHealthStatus struct {
+	HasToken        bool      `json:"has_token"`
+	IsValid         bool      `json:"is_valid"`
+	NeedsRefresh    bool      `json:"needs_refresh"`
+	Refreshable     bool      `json:"refreshable"`
+	ExpiresAt       time.Time `json:"expires_at,omitempty"`
+	TimeUntilExpiry string    `json:"time_until_expiry,omitempty"`
+}
+
+type SchedulerHealthStatus struct {
+	Running       bool      `json:"running"`
+	Interval      string    `json:"interval,omitempty"`
+	LastRunTime   time.Time `json:"last_run_time,omitempty"`
+	LastRunStatus string    `json:"last_run_status,omitempty"`
+	TotalRuns     int       `json:"total_runs"`
+	SuccessRuns   int       `json:"success_runs"`
+	FailedRuns    int       `json:"failed_runs"`
+}
+
+type HealthResponse struct {
+	StartTime   time.Time                       `json:"start_time"`
+	Status      string                          `json:"status"`
+	Providers   map[string]ProviderHealthStatus `json:"providers"`
+	TokenStatus map[string]TokenHealthStatus    `json:"token_status"`
+	Scheduler   *SchedulerHealthStatus          `json:"scheduler,omitempty"`
+	Uptime      string                          `json:"uptime"`
+}
+
+func DetermineHealthStatus(providers map[string]ProviderHealthStatus) string {
+	if len(providers) == 0 {
+		return "degraded"
+	}
+	for _, status := range providers {
+		if !status.Loaded || !status.Authenticated || status.Error != "" {
+			return "degraded"
+		}
+	}
+	return "healthy"
+}
+
+func NewHealthHandler(health *HealthResponse) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(health)
+	})
+}
+
+func newDynamicHealthHandler(snapshot func() *HealthResponse) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(snapshot())
+	})
+}
+
+func buildHealthResponse(
+	tm *auth.TokenManager,
+	loadResult *loader.ProviderLoadResult,
+	scheduler *syncengine.Scheduler,
+	schedulerInterval string,
+) *HealthResponse {
+	providers := make(map[string]ProviderHealthStatus, len(loadResult.Statuses))
+	for name, status := range loadResult.Statuses {
+		if status == nil {
+			continue
+		}
+		providers[name] = ProviderHealthStatus{
+			Loaded:        status.Loaded,
+			Authenticated: status.Authenticated,
+			Error:         status.Error,
+		}
+	}
+
+	tokenStatus := make(map[string]TokenHealthStatus)
+	for name, info := range tm.GetStatus() {
+		if info == nil {
+			continue
+		}
+		tokenStatus[name] = TokenHealthStatus{
+			HasToken:        info.HasToken,
+			IsValid:         info.IsValid,
+			NeedsRefresh:    info.NeedsRefresh,
+			Refreshable:     info.Refreshable,
+			ExpiresAt:       info.ExpiresAt,
+			TimeUntilExpiry: info.TimeUntilExpiry,
+		}
+	}
+
+	health := &HealthResponse{
+		StartTime:   startTime,
+		Providers:   providers,
+		TokenStatus: tokenStatus,
+		Uptime:      time.Since(startTime).Truncate(time.Second).String(),
+	}
+
+	health.Status = DetermineHealthStatus(providers)
+	if scheduler != nil {
+		stats := scheduler.GetStats()
+		health.Scheduler = &SchedulerHealthStatus{
+			Running:       scheduler.IsRunning(),
+			Interval:      schedulerInterval,
+			LastRunTime:   stats.LastRunTime,
+			LastRunStatus: stats.LastRunStatus,
+			TotalRuns:     stats.TotalRuns,
+			SuccessRuns:   stats.SuccessRuns,
+			FailedRuns:    stats.FailedRuns,
+		}
+	}
+
+	return health
+}
+
+var startTime = time.Now()
 
 // startHealthCheck 启动健康检查
-func startHealthCheck(ctx context.Context, port int, tm *auth.TokenManager) {
+func startHealthCheck(ctx context.Context, port int, snapshot func() *HealthResponse) {
 	fmt.Printf("🏥 健康检查端点: http://localhost:%d/health\n", port)
-	// TODO: 实现健康检查 HTTP 服务器
-}
 
-// startPeriodicSync 启动定时同步
-func startPeriodicSync(ctx context.Context, interval time.Duration) {
-	fmt.Printf("🔄 定时同步已启用 (间隔: %s)\n", interval)
-	// TODO: 实现定时同步逻辑
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: newDynamicHealthHandler(snapshot),
+	}
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
+
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		fmt.Printf("❌ 健康检查服务失败: %v\n", err)
+	}
 }

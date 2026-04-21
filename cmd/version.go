@@ -41,7 +41,7 @@ func runVersion(_ *cobra.Command, _ []string) {
 	}
 
 	fmt.Println()
-	fmt.Println("  TaskBridge - 连接 AI 与 Todo 软件的桥梁")
+	fmt.Println("  TaskBridge - 面向 AI 与多 Todo 平台的 CLI 工作流工具")
 	fmt.Println()
 	fmt.Printf("  版本:       %s\n", buildinfo.Version)
 	fmt.Printf("  Git 提交:   %s\n", buildinfo.GitCommit)

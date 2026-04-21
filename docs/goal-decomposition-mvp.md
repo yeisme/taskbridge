@@ -4,7 +4,7 @@
 
 ## 1. 功能概述
 
-本功能用于把自然语言目标（例如“我希望学习 openclaw”“我希望去上海旅游”）转成可执行任务，并通过 MCP 完成以下闭环：
+本功能用于把自然语言目标（例如“我希望学习 openclaw”“我希望去上海旅游”）转成可执行任务，并通过 TaskBridge 的自动化接口完成以下闭环：
 
 1. 创建项目草稿
 2. 生成拆分建议（不落库任务）
@@ -26,7 +26,7 @@
 
 - 目标拆分引擎：`internal/projectplanner/`
 - 项目存储：`internal/project/`
-- MCP 对接：`internal/mcp/handlers.go`、`internal/mcp/server.go`
+- CLI 对接：`cmd/project.go`
 
 ### 2.2 存储文件
 
@@ -63,7 +63,9 @@
 
 ---
 
-## 4. MCP 工具说明
+## 4. 自动化接口说明
+
+当前落地接口以 `taskbridge project ...` CLI 为主。
 
 ## 4.1 `create_project`
 
@@ -260,7 +262,7 @@
 
 ## 6.1 `split_project` 提示 `project storage not available`
 
-确认 MCP 启动已注入 `WithProjectStore(...)`，并且 `storage.path` 可写。
+确认 `storage.path` 可写，并且 `taskbridge project` 命令可访问项目存储。
 
 ## 6.2 `confirm_project` 成功但无任务创建
 

@@ -10,11 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/yeisme/taskbridge/internal/provider"
-	"github.com/yeisme/taskbridge/internal/provider/feishu"
-	"github.com/yeisme/taskbridge/internal/provider/google"
-	"github.com/yeisme/taskbridge/internal/provider/microsoft"
-	"github.com/yeisme/taskbridge/internal/provider/ticktick"
-	"github.com/yeisme/taskbridge/internal/provider/todoist"
 	"github.com/yeisme/taskbridge/internal/storage/filestore"
 	"github.com/yeisme/taskbridge/internal/sync"
 	"github.com/yeisme/taskbridge/pkg/ui"
@@ -148,107 +143,9 @@ func getSyncEngineForProvider(providerName string) (*sync.Engine, error) {
 		return nil, fmt.Errorf("创建存储失败: %w", err)
 	}
 
-	// 创建 Provider 映射
-	providers := make(map[string]provider.Provider)
-
-	// 初始化 Google Provider
-	if providerName == "" || providerName == "google" {
-		//即使配置中未启用，如果用户明确指定了 google，也尝试初始化
-		googleProvider, err := google.NewProviderFromHome()
-		if err != nil {
-			if providerName == "google" {
-				return nil, fmt.Errorf("初始化 Google Provider 失败: %w\n请运行 'taskbridge auth google' 进行认证", err)
-			}
-			// 如果只是扫描所有 Provider，静默跳过
-		} else if !googleProvider.IsAuthenticated() {
-			if providerName == "google" {
-				return nil, fmt.Errorf("google Provider 未认证，请运行 'taskbridge auth google' 进行认证")
-			}
-			// 如果只是扫描所有 Provider，静默跳过
-		} else {
-			providers["google"] = googleProvider
-		}
-	}
-
-	// 初始化 Microsoft Provider
-	if providerName == "" || providerName == "microsoft" {
-		microsoftProvider, err := microsoft.NewProviderFromHome()
-		if err != nil {
-			if providerName == "microsoft" {
-				return nil, fmt.Errorf("初始化 Microsoft Provider 失败: %w\n请运行 'taskbridge auth microsoft' 进行认证", err)
-			}
-			// 如果只是扫描所有 Provider，静默跳过
-		} else if !microsoftProvider.IsAuthenticated() {
-			if providerName == "microsoft" {
-				return nil, fmt.Errorf("microsoft Provider 未认证，请运行 'taskbridge auth microsoft' 进行认证")
-			}
-			// 如果只是扫描所有 Provider，静默跳过
-		} else {
-			providers["microsoft"] = microsoftProvider
-		}
-	}
-
-	// 初始化 Todoist Provider
-	if providerName == "" || providerName == "todoist" {
-		todoistProvider, err := todoist.NewProviderFromHome()
-		if err != nil {
-			if providerName == "todoist" {
-				return nil, fmt.Errorf("初始化 Todoist Provider 失败: %w\n请运行 'taskbridge auth login todoist' 进行认证", err)
-			}
-		} else if err := todoistProvider.Authenticate(context.Background(), nil); err != nil {
-			if providerName == "todoist" {
-				return nil, fmt.Errorf("todoist Provider 未认证，请运行 'taskbridge auth login todoist' 进行认证")
-			}
-		} else {
-			providers["todoist"] = todoistProvider
-		}
-	}
-
-	// 初始化 Feishu Provider
-	if providerName == "" || providerName == "feishu" {
-		feishuProvider, err := feishu.NewProviderFromHome()
-		if err != nil {
-			if providerName == "feishu" {
-				return nil, fmt.Errorf("初始化 Feishu Provider 失败: %w\n请运行 'taskbridge auth login feishu' 进行认证", err)
-			}
-		} else if !feishuProvider.IsAuthenticated() {
-			if providerName == "feishu" {
-				return nil, fmt.Errorf("feishu Provider 未认证，请运行 'taskbridge auth login feishu' 进行认证")
-			}
-		} else {
-			providers["feishu"] = feishuProvider
-		}
-	}
-
-	// 初始化 TickTick Provider
-	if providerName == "" || providerName == "ticktick" {
-		tickProvider, err := ticktick.NewProviderFromHomeByName("ticktick")
-		if err != nil {
-			if providerName == "ticktick" {
-				return nil, fmt.Errorf("初始化 TickTick Provider 失败: %w\n请运行 'taskbridge auth login ticktick' 进行认证", err)
-			}
-		} else if err := tickProvider.Authenticate(context.Background(), nil); err != nil {
-			if providerName == "ticktick" {
-				return nil, fmt.Errorf("ticktick Provider 未认证: %w\n请运行 'taskbridge auth login ticktick' 进行认证", err)
-			}
-		} else {
-			providers["ticktick"] = tickProvider
-		}
-	}
-	// 初始化 Dida Provider
-	if providerName == "" || providerName == "dida" {
-		didaProvider, err := ticktick.NewProviderFromHomeByName("dida")
-		if err != nil {
-			if providerName == "dida" {
-				return nil, fmt.Errorf("初始化 Dida Provider 失败: %w\n请运行 'taskbridge auth login dida' 进行认证", err)
-			}
-		} else if err := didaProvider.Authenticate(context.Background(), nil); err != nil {
-			if providerName == "dida" {
-				return nil, fmt.Errorf("dida Provider 未认证: %w\n请运行 'taskbridge auth login dida' 进行认证", err)
-			}
-		} else {
-			providers["dida"] = didaProvider
-		}
+	providers, err := loadAuthenticatedProviders(providerName)
+	if err != nil {
+		return nil, err
 	}
 
 	return sync.NewEngine(providers, store), nil

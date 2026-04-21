@@ -4,7 +4,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/rs/zerolog"
@@ -35,9 +34,9 @@ var (
 // rootCmd 根命令
 var rootCmd = &cobra.Command{
 	Use:   "taskbridge",
-	Short: "TaskBridge - 连接 AI 与 Todo 软件的桥梁",
-	Long: `TaskBridge 是一个 MCP (Model Context Protocol) 工具，
-用于连接各种 Todo 软件与 AI，让 AI 能够理解和管理任务。
+	Short: "TaskBridge - 面向 AI 与多 Todo 平台的 CLI 工作流工具",
+	Long: `TaskBridge 是一个以 CLI 为主的任务工作流工具，
+用于连接各种 Todo 软件与 AI，统一任务模型、同步流程与自动化能力。
 
 支持的平台：
   - Microsoft Todo
@@ -50,10 +49,12 @@ var rootCmd = &cobra.Command{
   - Apple Reminders (macOS/iOS)
 
 示例：
+  taskbridge provider list     # 查看可用 Provider
   taskbridge sync              # 执行单次同步
-  taskbridge serve             # 启动后台服务
   taskbridge list              # 列出所有任务
-  taskbridge analyze           # 分析任务（四象限视图）`,
+  taskbridge analyze           # 分析任务（四象限视图）
+  taskbridge project create    # 创建项目草稿
+  taskbridge governance achievement # 任务成就分析`,
 }
 
 // Execute 执行命令
@@ -92,14 +93,6 @@ func initConfig() {
 	}
 	if v := strings.TrimSpace(os.Getenv("TASKBRIDGE_LOG_LEVEL")); v != "" {
 		cfg.App.LogLevel = v
-	}
-	if v := strings.TrimSpace(os.Getenv("TASKBRIDGE_MCP_TRANSPORT")); v != "" {
-		cfg.MCP.Transport = v
-	}
-	if v := strings.TrimSpace(os.Getenv("TASKBRIDGE_MCP_PORT")); v != "" {
-		if p, err := strconv.Atoi(v); err == nil && p > 0 {
-			cfg.MCP.Port = p
-		}
 	}
 	applyProvidersFromList(strings.TrimSpace(os.Getenv("TASKBRIDGE_PROVIDERS")))
 

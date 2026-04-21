@@ -2,7 +2,7 @@
 
 ## 概述
 
-为 TaskBridge MCP 实现 Microsoft Todo（原 Wunderlist）Provider，允许用户通过 Microsoft Graph API 同步和管理任务。
+为 TaskBridge 实现 Microsoft Todo（原 Wunderlist）Provider，允许用户通过 Microsoft Graph API 同步和管理任务。
 
 ## 技术背景
 

@@ -8,7 +8,7 @@
 
 version: 2
 
-project_name: taskbridge-mcp
+project_name: taskbridge
 
 before:
   hooks:
@@ -58,23 +58,23 @@ checksum:
 nfpms:
   - id: linux-packages
     ids: [taskbridge]
-    package_name: taskbridge-mcp
+    package_name: taskbridge
     formats:
       - deb
       - rpm
       - apk
     bindir: /usr/bin
-    homepage: https://github.com/yeisme/taskbridge-mcp
+    homepage: https://github.com/yeisme/taskbridge
     maintainer: yeisme
-    description: TaskBridge MCP server for AI task management integration.
+    description: TaskBridge CLI for AI-assisted multi-provider task workflows.
     license: MIT
     contents:
       - src: README.md
-        dst: /usr/share/doc/taskbridge-mcp/README.md
+        dst: /usr/share/doc/taskbridge/README.md
       - src: docs/release-management.md
-        dst: /usr/share/doc/taskbridge-mcp/release-management.md
+        dst: /usr/share/doc/taskbridge/release-management.md
       - src: License
-        dst: /usr/share/licenses/taskbridge-mcp/LICENSE
+        dst: /usr/share/licenses/taskbridge/LICENSE
 
 changelog:
   sort: asc

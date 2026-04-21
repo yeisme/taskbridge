@@ -4,80 +4,48 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
-func TestDefaultConfigIncludesMCPExpansionDefaults(t *testing.T) {
+func TestDefaultConfigIncludesIntelligenceDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.MCP.Security.AuthMode != "none" {
-		t.Fatalf("unexpected security auth mode: %s", cfg.MCP.Security.AuthMode)
+	if !cfg.Intelligence.Enabled {
+		t.Fatalf("expected intelligence.enabled=true")
 	}
-	if !cfg.MCP.Tools.DefaultEnabled {
-		t.Fatalf("expected tools.default_enabled=true")
+	if cfg.Intelligence.Timezone != "Asia/Shanghai" {
+		t.Fatalf("unexpected timezone: %s", cfg.Intelligence.Timezone)
 	}
-	if cfg.MCP.Observability.Metrics.Path != "/metrics" {
-		t.Fatalf("unexpected metrics path: %s", cfg.MCP.Observability.Metrics.Path)
+	if cfg.Intelligence.Overdue.WarningThreshold != 3 {
+		t.Fatalf("unexpected warning threshold: %d", cfg.Intelligence.Overdue.WarningThreshold)
 	}
-	if cfg.MCP.Reliability.DefaultTimeout != 30*time.Second {
-		t.Fatalf("unexpected default timeout: %s", cfg.MCP.Reliability.DefaultTimeout)
+	if cfg.Intelligence.Decompose.PreferredStrategy != "project_split" {
+		t.Fatalf("unexpected preferred strategy: %s", cfg.Intelligence.Decompose.PreferredStrategy)
 	}
-	if cfg.MCP.Cache.Backend != "memory" {
-		t.Fatalf("unexpected cache backend: %s", cfg.MCP.Cache.Backend)
-	}
-	if cfg.MCP.Tenant.HeaderKey != "X-TaskBridge-Tenant" {
-		t.Fatalf("unexpected tenant header key: %s", cfg.MCP.Tenant.HeaderKey)
-	}
-	if len(cfg.MCP.Security.AuditMaskFields) == 0 {
-		t.Fatalf("expected audit mask defaults")
+	if len(cfg.Intelligence.Decompose.AbstractKeywords) == 0 {
+		t.Fatalf("expected abstract keyword defaults")
 	}
 }
 
-func TestNormalizeTransport(t *testing.T) {
-	canonical, deprecated, err := NormalizeTransport("tcp")
-	if err != nil {
-		t.Fatalf("normalize tcp: %v", err)
-	}
-	if canonical != "sse" {
-		t.Fatalf("expected sse, got %s", canonical)
-	}
-	if !deprecated {
-		t.Fatalf("expected deprecated=true for tcp")
-	}
-}
-
-func TestValidateCoversExpandedRules(t *testing.T) {
+func TestValidateCoversIntelligenceRules(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.MCP.Transport = "tcp"
-	cfg.MCP.Security.AuthMode = "bad-mode"
-	cfg.MCP.Tools.AllowList = []string{"list_tasks"}
-	cfg.MCP.Tools.DenyList = []string{"list_tasks"}
-	cfg.MCP.Observability.Trace.SampleRate = 2
-	cfg.MCP.Reliability.DefaultTimeout = 3 * time.Minute
-	cfg.MCP.Reliability.MaxTimeout = 2 * time.Minute
-	cfg.MCP.Reliability.Retry.MaxAttempts = 0
-	cfg.MCP.Reliability.CircuitBreaker.FailureThreshold = 0
+	cfg.Intelligence.Overdue.OverloadThreshold = 1
+	cfg.Intelligence.Overdue.WarningThreshold = 2
+	cfg.Intelligence.Decompose.ComplexityThreshold = 120
 
 	issues := cfg.Validate()
-	if !hasIssue(issues, ValidationLevelWarning, "mcp.transport") {
-		t.Fatalf("expected tcp deprecation warning: %#v", issues)
+	if !hasIssue(issues, ValidationLevelError, "intelligence.overdue.overload_threshold") {
+		t.Fatalf("expected overload threshold error: %#v", issues)
 	}
-	if !hasIssue(issues, ValidationLevelError, "mcp.security.auth_mode") {
-		t.Fatalf("expected invalid auth mode error: %#v", issues)
-	}
-	if !hasIssue(issues, ValidationLevelError, "mcp.observability.trace.sample_rate") {
-		t.Fatalf("expected sample rate error: %#v", issues)
-	}
-	if !hasIssue(issues, ValidationLevelError, "mcp.tools.allow_list") {
-		t.Fatalf("expected allow/deny conflict error: %#v", issues)
+	if !hasIssue(issues, ValidationLevelError, "intelligence.decomposition.complexity_threshold") {
+		t.Fatalf("expected complexity threshold error: %#v", issues)
 	}
 }
 
-func TestLoadPreservesDefaultsForMissingNewFields(t *testing.T) {
+func TestLoadPreservesDefaultsForMissingIntelligenceFields(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	content := []byte("mcp:\n  enabled: true\n  intelligence:\n    enabled: true\n")
-	if err := os.WriteFile(configPath, content, 0600); err != nil {
+	content := []byte("intelligence:\n  enabled: true\n")
+	if err := os.WriteFile(configPath, content, 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -86,14 +54,11 @@ func TestLoadPreservesDefaultsForMissingNewFields(t *testing.T) {
 		t.Fatalf("load config: %v", err)
 	}
 
-	if cfg.MCP.Security.AuthMode != "none" {
-		t.Fatalf("expected default auth_mode, got %s", cfg.MCP.Security.AuthMode)
+	if cfg.Intelligence.Timezone != "Asia/Shanghai" {
+		t.Fatalf("expected default timezone, got %s", cfg.Intelligence.Timezone)
 	}
-	if cfg.MCP.Observability.Audit.Output != "stdout" {
-		t.Fatalf("expected default audit output, got %s", cfg.MCP.Observability.Audit.Output)
-	}
-	if cfg.MCP.Cache.MaxEntries != 1000 {
-		t.Fatalf("expected default cache max entries, got %d", cfg.MCP.Cache.MaxEntries)
+	if cfg.Intelligence.Overdue.MaxCandidates != 30 {
+		t.Fatalf("expected default max candidates, got %d", cfg.Intelligence.Overdue.MaxCandidates)
 	}
 }
 

@@ -176,20 +176,18 @@ func runConfigGet(cmd *cobra.Command, args []string) {
 		} else {
 			value = cfg.Sync
 		}
-	case "mcp":
+	case "intelligence":
 		if len(parts) > 1 {
 			switch parts[1] {
+			case "timezone":
+				value = cfg.Intelligence.Timezone
 			case "enabled":
-				value = cfg.MCP.Enabled
-			case "transport":
-				value = cfg.MCP.Transport
-			case "port":
-				value = cfg.MCP.Port
+				value = cfg.Intelligence.Enabled
 			default:
-				value = cfg.MCP
+				value = cfg.Intelligence
 			}
 		} else {
-			value = cfg.MCP
+			value = cfg.Intelligence
 		}
 	case "providers":
 		if len(parts) > 1 {
@@ -249,7 +247,7 @@ func runConfigInit(cmd *cobra.Command, args []string) {
 	_ = cmd
 	_ = args
 	fmt.Println("❌ `taskbridge config init` 已弃用。请改用环境变量或命令行参数。")
-	fmt.Println("   示例: taskbridge --providers microsoft,todoist mcp start")
+	fmt.Println("   示例: TASKBRIDGE_PROVIDERS=microsoft,todoist taskbridge sync status")
 	os.Exit(1)
 }
 

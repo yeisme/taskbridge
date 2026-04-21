@@ -42,7 +42,7 @@ services:
         max-size: "10m"
         max-file: "3"
     labels:
-      - "com.taskbridge.description=TaskBridge MCP Server"
+      - "com.taskbridge.description=TaskBridge CLI for AI-assisted multi-provider task workflows"
       - "com.taskbridge.version=${VERSION:-latest}"
 
   # MongoDB（文档型数据库）
