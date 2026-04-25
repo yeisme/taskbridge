@@ -2,6 +2,9 @@ package filestore
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -113,4 +116,68 @@ func TestQueryTasksExtendedFilters(t *testing.T) {
 			t.Fatalf("expected empty result, got %+v", result)
 		}
 	})
+}
+
+func TestLoadLegacyArrayPayloads(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC()
+
+	legacyTasks := []*model.Task{
+		{
+			ID:          "task-legacy",
+			Title:       "Legacy task",
+			Status:      model.StatusTodo,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+			Source:      model.SourceTodoist,
+			SourceRawID: "remote-task-legacy",
+		},
+	}
+	legacyLists := []*model.TaskList{
+		{
+			ID:          "list-legacy",
+			Name:        "Legacy list",
+			Source:      model.SourceTodoist,
+			SourceRawID: "remote-list-legacy",
+		},
+	}
+
+	writeJSONFile(t, filepath.Join(dir, "tasks.json"), legacyTasks)
+	writeJSONFile(t, filepath.Join(dir, "lists.json"), legacyLists)
+	writeJSONFile(t, filepath.Join(dir, "sync.json"), map[string]string{
+		string(model.SourceTodoist): now.Format(time.RFC3339),
+	})
+
+	fs, err := New(dir, "json")
+	if err != nil {
+		t.Fatalf("failed to load legacy storage: %v", err)
+	}
+
+	tasks, err := fs.ListTasks(context.Background(), storage.ListOptions{})
+	if err != nil {
+		t.Fatalf("failed to list tasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != "task-legacy" {
+		t.Fatalf("unexpected tasks: %+v", tasks)
+	}
+
+	lists, err := fs.ListTaskLists(context.Background())
+	if err != nil {
+		t.Fatalf("failed to list task lists: %v", err)
+	}
+	if len(lists) != 1 || lists[0].ID != "list-legacy" {
+		t.Fatalf("unexpected lists: %+v", lists)
+	}
+}
+
+func writeJSONFile(t *testing.T, path string, value interface{}) {
+	t.Helper()
+
+	raw, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		t.Fatalf("failed to marshal %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatalf("failed to write %s: %v", path, err)
+	}
 }

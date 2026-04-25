@@ -8,7 +8,22 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	syncengine "github.com/yeisme/taskbridge/internal/sync"
 )
+
+type fakeScheduler struct {
+	running bool
+	stats   syncengine.SchedulerStats
+	nextRun time.Time
+	result  *syncengine.Result
+	err     error
+}
+
+func (f *fakeScheduler) IsRunning() bool                                     { return f.running }
+func (f *fakeScheduler) GetStats() syncengine.SchedulerStats                 { return f.stats }
+func (f *fakeScheduler) NextRunTime() time.Time                              { return f.nextRun }
+func (f *fakeScheduler) Trigger(context.Context) (*syncengine.Result, error) { return f.result, f.err }
 
 // TestHealthResponseStructure verifies the health endpoint returns valid
 // JSON with the required fields.
@@ -16,6 +31,8 @@ func TestHealthResponseStructure(t *testing.T) {
 	health := &HealthResponse{
 		StartTime:   time.Now().Truncate(time.Second),
 		Status:      "healthy",
+		Live:        true,
+		Ready:       true,
 		Providers:   map[string]ProviderHealthStatus{},
 		TokenStatus: map[string]TokenHealthStatus{},
 		Scheduler:   &SchedulerHealthStatus{Running: false},
@@ -32,7 +49,7 @@ func TestHealthResponseStructure(t *testing.T) {
 		t.Fatalf("health JSON is not valid: %v", err)
 	}
 
-	requiredFields := []string{"start_time", "status", "providers", "token_status", "scheduler", "uptime"}
+	requiredFields := []string{"start_time", "status", "live", "ready", "providers", "token_status", "scheduler", "uptime"}
 	for _, field := range requiredFields {
 		if _, ok := parsed[field]; !ok {
 			t.Errorf("missing required field %q in health response", field)
@@ -45,6 +62,8 @@ func TestHealthEndpointReturns200(t *testing.T) {
 	handler := NewHealthHandler(&HealthResponse{
 		StartTime: time.Now(),
 		Status:    "healthy",
+		Live:      true,
+		Ready:     true,
 		Providers: map[string]ProviderHealthStatus{},
 	})
 
@@ -66,6 +85,8 @@ func TestHealthEndpointContentTypeJSON(t *testing.T) {
 	handler := NewHealthHandler(&HealthResponse{
 		StartTime: time.Now(),
 		Status:    "healthy",
+		Live:      true,
+		Ready:     true,
 		Providers: map[string]ProviderHealthStatus{},
 	})
 
@@ -88,6 +109,8 @@ func TestHealthEndpointDegradedStatus(t *testing.T) {
 	health := &HealthResponse{
 		StartTime: time.Now(),
 		Status:    "degraded",
+		Live:      true,
+		Ready:     false,
 		Providers: map[string]ProviderHealthStatus{
 			"google": {
 				Loaded: false,
@@ -123,6 +146,8 @@ func TestHealthResponseIncludesProviderErrors(t *testing.T) {
 	health := &HealthResponse{
 		StartTime: time.Now(),
 		Status:    "degraded",
+		Live:      true,
+		Ready:     false,
 		Providers: map[string]ProviderHealthStatus{
 			"google": {
 				Loaded:        false,
@@ -166,6 +191,8 @@ func TestHealthResponseSchedulerState(t *testing.T) {
 	health := &HealthResponse{
 		StartTime: time.Now(),
 		Status:    "healthy",
+		Live:      true,
+		Ready:     true,
 		Providers: map[string]ProviderHealthStatus{},
 		TokenStatus: map[string]TokenHealthStatus{
 			"google": {HasToken: true, IsValid: true, NeedsRefresh: false},
@@ -189,6 +216,54 @@ func TestHealthResponseSchedulerState(t *testing.T) {
 	}
 	if scheduler["interval"] != "5m" {
 		t.Errorf("expected scheduler.interval='5m', got %v", scheduler["interval"])
+	}
+}
+
+func TestServeStatusMuxReadyz(t *testing.T) {
+	handler := newServeStatusMux(func() *HealthResponse {
+		return &HealthResponse{
+			Status: "healthy",
+			Live:   true,
+			Ready:  true,
+		}
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Result().StatusCode)
+	}
+}
+
+func TestServeStatusMuxReadyzDegraded(t *testing.T) {
+	handler := newServeStatusMux(func() *HealthResponse {
+		return &HealthResponse{
+			Status: "degraded",
+			Live:   true,
+			Ready:  false,
+		}
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Result().StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", w.Result().StatusCode)
+	}
+}
+
+func TestServeStatusMuxLivez(t *testing.T) {
+	handler := newServeStatusMux(func() *HealthResponse { return &HealthResponse{} })
+
+	req := httptest.NewRequest(http.MethodGet, "/livez", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Result().StatusCode)
 	}
 }
 
@@ -216,6 +291,44 @@ func TestServeGracefulShutdown(t *testing.T) {
 		// Success: goroutine stopped on context cancel
 	case <-time.After(2 * time.Second):
 		t.Fatal("graceful shutdown timed out - goroutine did not stop")
+	}
+}
+
+func TestDetermineReadyStatus(t *testing.T) {
+	runningScheduler := &fakeScheduler{running: true}
+	stoppedScheduler := &fakeScheduler{running: false}
+
+	tests := []struct {
+		name      string
+		health    string
+		scheduler schedulerStatusProvider
+		expected  bool
+	}{
+		{name: "healthy without scheduler", health: "healthy", expected: true},
+		{name: "healthy with running scheduler", health: "healthy", scheduler: runningScheduler, expected: true},
+		{name: "healthy with stopped scheduler", health: "healthy", scheduler: stoppedScheduler, expected: false},
+		{name: "degraded without scheduler", health: "degraded", expected: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := determineReadyStatus(tt.health, tt.scheduler); got != tt.expected {
+				t.Fatalf("expected %v, got %v", tt.expected, got)
+			}
+		})
+	}
+}
+
+func TestTriggerInitialSync(t *testing.T) {
+	expected := &syncengine.Result{Pulled: 2, Pushed: 1}
+	scheduler := &fakeScheduler{result: expected}
+
+	result, err := triggerInitialSync(context.Background(), scheduler)
+	if err != nil {
+		t.Fatalf("triggerInitialSync returned error: %v", err)
+	}
+	if result != expected {
+		t.Fatalf("expected returned result pointer to match fake scheduler result")
 	}
 }
 

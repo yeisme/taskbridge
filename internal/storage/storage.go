@@ -8,6 +8,12 @@ import (
 	"github.com/yeisme/taskbridge/internal/model"
 )
 
+// Flushable is an optional interface for stores that support batched writes.
+type Flushable interface {
+	Flush() error
+	Close() error
+}
+
 // Storage 存储接口
 type Storage interface {
 	// 任务存储

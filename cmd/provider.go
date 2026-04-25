@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -35,7 +34,7 @@ var providerListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "列出所有 Provider",
 	Long:  `列出所有支持的 Provider 及其状态`,
-	Run:   runProviderList,
+	RunE:  runProviderList,
 }
 
 // providerEnableCmd 启用 Provider
@@ -44,7 +43,7 @@ var providerEnableCmd = &cobra.Command{
 	Short: "启用 Provider",
 	Long:  `启用指定的 Provider`,
 	Args:  cobra.ExactArgs(1),
-	Run:   runProviderEnable,
+	RunE:  runProviderEnable,
 }
 
 // providerDisableCmd 禁用 Provider
@@ -53,7 +52,7 @@ var providerDisableCmd = &cobra.Command{
 	Short: "禁用 Provider",
 	Long:  `禁用指定的 Provider`,
 	Args:  cobra.ExactArgs(1),
-	Run:   runProviderDisable,
+	RunE:  runProviderDisable,
 }
 
 // providerTestCmd 测试 Provider
@@ -62,7 +61,7 @@ var providerTestCmd = &cobra.Command{
 	Short: "测试 Provider 连接",
 	Long:  `测试指定 Provider 的连接和认证状态`,
 	Args:  cobra.ExactArgs(1),
-	Run:   runProviderTest,
+	RunE:  runProviderTest,
 }
 
 // providerInfoCmd 显示 Provider 信息
@@ -71,7 +70,7 @@ var providerInfoCmd = &cobra.Command{
 	Short: "显示 Provider 详细信息",
 	Long:  `显示指定 Provider 的详细信息和能力`,
 	Args:  cobra.ExactArgs(1),
-	Run:   runProviderInfo,
+	RunE:  runProviderInfo,
 }
 
 func init() {
@@ -149,7 +148,7 @@ func getProviderInfos() map[string]ProviderInfo {
 	}
 }
 
-func runProviderList(_ *cobra.Command, _ []string) {
+func runProviderList(_ *cobra.Command, _ []string) error {
 	providers := getProviderInfos()
 
 	// 使用 lipgloss table 组件
@@ -183,16 +182,16 @@ func runProviderList(_ *cobra.Command, _ []string) {
 	fmt.Println()
 	fmt.Println(ui.Dim("提示: 使用 'taskbridge provider info <简写>' 查看详细信息"))
 	fmt.Println()
+	return nil
 }
 
-func runProviderEnable(_ *cobra.Command, args []string) {
+func runProviderEnable(_ *cobra.Command, args []string) error {
 	// 解析 Provider 名称（支持简写）
 	providerName := provider.ResolveProviderName(args[0])
 
 	// 检查 Provider 是否存在
 	if !provider.IsValidProvider(providerName) {
-		fmt.Println(ui.Error("未知的 Provider: " + args[0]))
-		os.Exit(1)
+		return usageError("未知的 Provider: " + args[0])
 	}
 
 	// 更新配置
@@ -217,16 +216,16 @@ func runProviderEnable(_ *cobra.Command, args []string) {
 	fmt.Printf("  1. 配置认证: %s\n", ui.Highlight("taskbridge auth login "+providerName))
 	fmt.Printf("  2. 测试连接: %s\n", ui.Highlight("taskbridge provider test "+providerName))
 	fmt.Println()
+	return nil
 }
 
-func runProviderDisable(_ *cobra.Command, args []string) {
+func runProviderDisable(_ *cobra.Command, args []string) error {
 	// 解析 Provider 名称（支持简写）
 	providerName := provider.ResolveProviderName(args[0])
 
 	// 检查 Provider 是否存在
 	if !provider.IsValidProvider(providerName) {
-		fmt.Println(ui.Error("未知的 Provider: " + args[0]))
-		os.Exit(1)
+		return usageError("未知的 Provider: " + args[0])
 	}
 
 	// 更新配置
@@ -246,16 +245,16 @@ func runProviderDisable(_ *cobra.Command, args []string) {
 	}
 
 	fmt.Println(ui.Success("Provider " + providerName + " 已禁用"))
+	return nil
 }
 
-func runProviderTest(_ *cobra.Command, args []string) {
+func runProviderTest(_ *cobra.Command, args []string) error {
 	// 解析 Provider 名称（支持简写）
 	providerName := provider.ResolveProviderName(args[0])
 
 	// 检查 Provider 是否存在
 	if !provider.IsValidProvider(providerName) {
-		fmt.Println(ui.Error("未知的 Provider: " + args[0]))
-		os.Exit(1)
+		return usageError("未知的 Provider: " + args[0])
 	}
 
 	// 获取 Provider 定义
@@ -271,7 +270,7 @@ func runProviderTest(_ *cobra.Command, args []string) {
 	if !p.Enabled {
 		fmt.Println(ui.Error("Provider 未启用"))
 		fmt.Printf("   运行 '%s' 启用\n", ui.Highlight("taskbridge provider enable "+providerName))
-		return
+		return nil
 	}
 	fmt.Println(ui.Success("Provider 已启用"))
 
@@ -289,16 +288,16 @@ func runProviderTest(_ *cobra.Command, args []string) {
 	}
 
 	fmt.Println()
+	return nil
 }
 
-func runProviderInfo(cmd *cobra.Command, args []string) {
+func runProviderInfo(cmd *cobra.Command, args []string) error {
 	// 解析 Provider 名称（支持简写）
 	providerName := provider.ResolveProviderName(args[0])
 
 	// 检查 Provider 是否存在
 	if !provider.IsValidProvider(providerName) {
-		fmt.Println(ui.Error("未知的 Provider: " + args[0]))
-		os.Exit(1)
+		return usageError("未知的 Provider: " + args[0])
 	}
 
 	// 获取 Provider 定义
@@ -334,6 +333,7 @@ func runProviderInfo(cmd *cobra.Command, args []string) {
 	fmt.Println()
 	fmt.Println(ui.ProviderCard(def.Name, def.DisplayName, def.Description, p.AuthType, status, checkItems))
 	fmt.Println()
+	return nil
 }
 
 func getProviderCapabilities(providerName string) []string {

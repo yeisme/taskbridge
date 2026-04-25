@@ -24,6 +24,7 @@ func init() {
 var (
 	cfgFile     string
 	verbose     bool
+	quiet       bool
 	storagePath string
 	storageType string
 	logLevel    string
@@ -55,13 +56,15 @@ var rootCmd = &cobra.Command{
   taskbridge analyze           # 分析任务（四象限视图）
   taskbridge project create    # 创建项目草稿
   taskbridge governance achievement # 任务成就分析`,
+	SilenceErrors: true,
+	SilenceUsage:  true,
 }
 
 // Execute 执行命令
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		fmt.Fprintln(os.Stderr, formatCLIError(err))
+		os.Exit(cliExitCode(err))
 	}
 }
 
@@ -70,6 +73,7 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "配置文件路径（已弃用，不再读取）")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "详细输出")
+	rootCmd.PersistentFlags().BoolVar(&quiet, "quiet", false, "精简输出（管道/脚本友好）")
 	rootCmd.PersistentFlags().StringVar(&storagePath, "storage-path", "", "任务存储路径（可用环境变量 TASKBRIDGE_STORAGE_PATH）")
 	rootCmd.PersistentFlags().StringVar(&storageType, "storage-type", "", "存储类型：file|mongodb（可用环境变量 TASKBRIDGE_STORAGE_TYPE）")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "日志级别：debug|info|warn|error（可用环境变量 TASKBRIDGE_LOG_LEVEL）")
@@ -166,4 +170,18 @@ func applyProvidersFromList(value string) {
 // GetConfig 获取配置
 func GetConfig() *config.Config {
 	return cfg
+}
+
+// IsQuietMode returns true when --quiet flag is set or stdout is a pipe.
+// Commands should use this to produce machine-friendly output.
+func IsQuietMode() bool {
+	if quiet {
+		return true
+	}
+	// Detect pipe (same check as output.IsPipe)
+	info, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (info.Mode() & os.ModeCharDevice) == 0
 }

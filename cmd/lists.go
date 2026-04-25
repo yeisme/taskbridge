@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 
 	"github.com/spf13/cobra"
@@ -12,7 +11,6 @@ import (
 	"github.com/yeisme/taskbridge/internal/model"
 	"github.com/yeisme/taskbridge/internal/provider"
 	"github.com/yeisme/taskbridge/internal/storage"
-	"github.com/yeisme/taskbridge/internal/storage/filestore"
 	"github.com/yeisme/taskbridge/pkg/ui"
 )
 
@@ -39,7 +37,7 @@ var listsCmd = &cobra.Command{
   taskbridge lists --source ms
   taskbridge lists --sync-now --source microsoft
   taskbridge lists --format json`,
-	Run: runLists,
+	RunE: runLists,
 }
 
 func init() {
@@ -50,36 +48,32 @@ func init() {
 	listsCmd.Flags().BoolVar(&listsSyncNow, "sync-now", false, "查询前先同步远程任务到本地")
 }
 
-func runLists(cmd *cobra.Command, args []string) {
+func runLists(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
 	resolvedSource := ""
 	if listsSource != "" {
 		resolvedSource = provider.ResolveProviderName(listsSource)
 		if !provider.IsValidProvider(resolvedSource) {
-			fmt.Printf("❌ 不支持的来源: %s\n", listsSource)
-			fmt.Println("支持的来源: google (g), microsoft (ms), feishu, ticktick (tick), dida (ticktick_cn), todoist (todo)")
-			os.Exit(1)
+			return usageError("不支持的来源: " + listsSource)
 		}
 	}
 
 	if listsSyncNow {
 		if err := syncNowForList(ctx, resolvedSource); err != nil {
-			fmt.Printf("❌ 同步失败: %v\n", err)
-			os.Exit(1)
+			return commandError("同步失败", err)
 		}
 	}
 
-	store, err := filestore.New(cfg.Storage.Path, cfg.Storage.File.Format)
+	store, cleanup, err := getStore()
+	defer cleanup()
 	if err != nil {
-		fmt.Printf("❌ 创建存储失败: %v\n", err)
-		os.Exit(1)
+		return commandError("创建存储失败", err)
 	}
 
 	lists, err := store.ListTaskLists(ctx)
 	if err != nil {
-		fmt.Printf("❌ 查询清单失败: %v\n", err)
-		os.Exit(1)
+		return commandError("查询清单失败", err)
 	}
 
 	if resolvedSource != "" {
@@ -97,13 +91,12 @@ func runLists(cmd *cobra.Command, args []string) {
 		if !listsSyncNow {
 			fmt.Println("💡 可尝试: taskbridge lists --sync-now")
 		}
-		return
+		return nil
 	}
 
 	taskCounts, err := buildTaskCountByList(ctx, store, resolvedSource)
 	if err != nil {
-		fmt.Printf("❌ 统计任务数量失败: %v\n", err)
-		os.Exit(1)
+		return commandError("统计任务数量失败", err)
 	}
 
 	summaries := make([]listSummary, 0, len(lists))
@@ -127,13 +120,13 @@ func runLists(cmd *cobra.Command, args []string) {
 	case "json":
 		data, err := json.MarshalIndent(summaries, "", "  ")
 		if err != nil {
-			fmt.Printf("❌ 序列化失败: %v\n", err)
-			os.Exit(1)
+			return commandError("序列化失败", err)
 		}
 		fmt.Println(string(data))
 	default:
 		printListsTable(summaries)
 	}
+	return nil
 }
 
 func buildTaskCountByList(ctx context.Context, store storage.Storage, source string) (map[string]int, error) {

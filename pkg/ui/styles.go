@@ -1,7 +1,11 @@
 // Package ui provides styled CLI output components using lipgloss
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Color palette
 var (
@@ -149,4 +153,105 @@ func Highlight(text string) string {
 		Foreground(PrimaryColor).
 		Bold(true).
 		Render(text)
+}
+
+// Theme colors (Claude Code inspired)
+var (
+	ThemePurple  = lipgloss.Color("#7C3AED")
+	ThemeGreen   = lipgloss.Color("#22C55E")
+	ThemeOrange  = lipgloss.Color("#F59E0B")
+	ThemeRed     = lipgloss.Color("#EF4444")
+	ThemeGray    = lipgloss.Color("#94A3B8")
+	ThemeBgDark  = lipgloss.Color("#1E1E2E")
+	ThemeBgCard  = lipgloss.Color("#2D2D3F")
+	ThemeText    = lipgloss.Color("#E2E8F0")
+	ThemeDimText = lipgloss.Color("#64748B")
+)
+
+// TaskCard returns a card style with a colored left border based on task status.
+func TaskCard(status string) lipgloss.Style {
+	borderColor := ThemeGray
+	switch status {
+	case "completed":
+		borderColor = ThemeGreen
+	case "in_progress":
+		borderColor = ThemeOrange
+	case "todo":
+		borderColor = ThemeGray
+	case "cancelled":
+		borderColor = ThemeRed
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderLeft(true).
+		BorderForeground(lipgloss.Color(string(borderColor))).
+		Padding(0, 1).
+		MarginBottom(1)
+}
+
+// PriorityStyle returns a bold style colored by priority level.
+func PriorityStyle(priority int) lipgloss.Style {
+	colors := map[int]lipgloss.Color{
+		0: ThemeRed,    // P0 Urgent
+		1: ThemeOrange, // P1 High
+		2: ThemeOrange, // P2 Medium
+		3: ThemeGray,   // P3 Low
+	}
+	c, ok := colors[priority]
+	if !ok {
+		c = ThemeGray
+	}
+	return lipgloss.NewStyle().Foreground(c).Bold(true)
+}
+
+// QuadrantStyle returns a background-colored style for Eisenhower matrix quadrants.
+func QuadrantStyle(quadrant int) lipgloss.Style {
+	colors := map[int]lipgloss.Color{
+		1: ThemeRed,    // Q1 Urgent+Important
+		2: ThemeGreen,  // Q2 Important
+		3: ThemeOrange, // Q3 Urgent
+		4: ThemeGray,   // Q4 Neither
+	}
+	c, ok := colors[quadrant]
+	if !ok {
+		c = ThemeGray
+	}
+	return lipgloss.NewStyle().
+		Background(c).
+		Foreground(lipgloss.Color("#FFFFFF")).
+		Padding(0, 1)
+}
+
+// ProgressBar renders a gradient progress bar with the given width and progress (0-100).
+func ProgressBar(width int, progress int) string {
+	filled := width * progress / 100
+	if filled > width {
+		filled = width
+	}
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
+	return lipgloss.NewStyle().
+		Foreground(ThemePurple).
+		Render(bar)
+}
+
+// StatusBarStyle returns a style for the TUI bottom status bar.
+func StatusBarStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Background(ThemePurple).
+		Foreground(lipgloss.Color("#FFFFFF")).
+		Padding(0, 1)
+}
+
+// ThemeTitleStyle returns a style for TUI headers.
+func ThemeTitleStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(ThemePurple).
+		Bold(true).
+		MarginBottom(1)
+}
+
+// DimStyle returns a style for secondary/dimmed text.
+func DimStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(ThemeDimText)
 }

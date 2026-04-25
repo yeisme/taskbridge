@@ -4,13 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/yeisme/taskbridge/internal/model"
-	"github.com/yeisme/taskbridge/internal/storage/filestore"
 )
 
 var (
@@ -51,7 +49,7 @@ var taskAddCmd = &cobra.Command{
   taskbridge task add "完成项目报告"
   taskbridge task add "回复邮件" --due 2024-01-15 --priority 3 --quadrant 1`,
 	Args: cobra.ExactArgs(1),
-	Run:  runTaskAdd,
+	RunE: runTaskAdd,
 }
 
 // taskEditCmd 编辑任务
@@ -64,7 +62,7 @@ var taskEditCmd = &cobra.Command{
   taskbridge task edit <task-id> --title "新标题"
   taskbridge task edit <task-id> --due 2024-01-20 --priority 2`,
 	Args: cobra.ExactArgs(1),
-	Run:  runTaskEdit,
+	RunE: runTaskEdit,
 }
 
 // taskDeleteCmd 删除任务
@@ -77,7 +75,7 @@ var taskDeleteCmd = &cobra.Command{
   taskbridge task delete <task-id>
   taskbridge task delete <task-id> --force`,
 	Args: cobra.ExactArgs(1),
-	Run:  runTaskDelete,
+	RunE: runTaskDelete,
 }
 
 // taskDoneCmd 完成任务
@@ -89,7 +87,7 @@ var taskDoneCmd = &cobra.Command{
 示例:
   taskbridge task done <task-id>`,
 	Args: cobra.ExactArgs(1),
-	Run:  runTaskDone,
+	RunE: runTaskDone,
 }
 
 // taskShowCmd 显示任务详情
@@ -102,7 +100,7 @@ var taskShowCmd = &cobra.Command{
   taskbridge task show <task-id>
   taskbridge task show <task-id> --format json`,
 	Args: cobra.ExactArgs(1),
-	Run:  runTaskShow,
+	RunE: runTaskShow,
 }
 
 // taskUndoCmd 撤销完成
@@ -114,7 +112,7 @@ var taskUndoCmd = &cobra.Command{
 示例:
   taskbridge task undo <task-id>`,
 	Args: cobra.ExactArgs(1),
-	Run:  runTaskUndo,
+	RunE: runTaskUndo,
 }
 
 func init() {
@@ -145,15 +143,15 @@ func init() {
 	taskDeleteCmd.Flags().Bool("force", false, "强制删除，不确认")
 }
 
-func runTaskAdd(cmd *cobra.Command, args []string) {
+func runTaskAdd(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	title := args[0]
 
 	// 创建存储
-	store, err := filestore.New(cfg.Storage.Path, cfg.Storage.File.Format)
+	store, cleanup, err := getStore()
+	defer cleanup()
 	if err != nil {
-		fmt.Printf("❌ 创建存储失败: %v\n", err)
-		os.Exit(1)
+		return commandError("创建存储失败", err)
 	}
 
 	// 创建任务
@@ -173,8 +171,7 @@ func runTaskAdd(cmd *cobra.Command, args []string) {
 	if taskDueDate != "" {
 		due, err := time.Parse("2006-01-02", taskDueDate)
 		if err != nil {
-			fmt.Printf("❌ 无效的日期格式: %v\n", err)
-			os.Exit(1)
+			return commandError("无效的日期格式", err)
 		}
 		task.DueDate = &due
 	}
@@ -184,29 +181,32 @@ func runTaskAdd(cmd *cobra.Command, args []string) {
 
 	// 保存任务
 	if err := store.SaveTask(ctx, task); err != nil {
-		fmt.Printf("❌ 保存任务失败: %v\n", err)
-		os.Exit(1)
+		return commandError("保存任务失败", err)
 	}
 
-	fmt.Printf("✅ 任务已创建: %s (ID: %s)\n", title, task.ID)
+	if IsQuietMode() {
+		fmt.Printf("%s:%s:%s\n", task.ID, task.Title, task.Status)
+	} else {
+		fmt.Printf("✅ 任务已创建: %s (ID: %s)\n", title, task.ID)
+	}
+	return nil
 }
 
-func runTaskEdit(cmd *cobra.Command, args []string) {
+func runTaskEdit(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskID := args[0]
 
 	// 创建存储
-	store, err := filestore.New(cfg.Storage.Path, cfg.Storage.File.Format)
+	store, cleanup, err := getStore()
+	defer cleanup()
 	if err != nil {
-		fmt.Printf("❌ 创建存储失败: %v\n", err)
-		os.Exit(1)
+		return commandError("创建存储失败", err)
 	}
 
 	// 获取任务
 	task, err := store.GetTask(ctx, taskID)
 	if err != nil {
-		fmt.Printf("❌ 获取任务失败: %v\n", err)
-		os.Exit(1)
+		return commandError("获取任务失败", err)
 	}
 
 	// 更新字段
@@ -216,8 +216,7 @@ func runTaskEdit(cmd *cobra.Command, args []string) {
 	if taskDueDate != "" {
 		due, err := time.Parse("2006-01-02", taskDueDate)
 		if err != nil {
-			fmt.Printf("❌ 无效的日期格式: %v\n", err)
-			os.Exit(1)
+			return commandError("无效的日期格式", err)
 		}
 		task.DueDate = &due
 	}
@@ -233,29 +232,32 @@ func runTaskEdit(cmd *cobra.Command, args []string) {
 
 	// 保存任务
 	if err := store.SaveTask(ctx, task); err != nil {
-		fmt.Printf("❌ 保存任务失败: %v\n", err)
-		os.Exit(1)
+		return commandError("保存任务失败", err)
 	}
 
-	fmt.Printf("✅ 任务已更新: %s\n", task.ID)
+	if IsQuietMode() {
+		fmt.Printf("%s:%s:%s\n", task.ID, task.Title, task.Status)
+	} else {
+		fmt.Printf("✅ 任务已更新: %s\n", task.ID)
+	}
+	return nil
 }
 
-func runTaskDelete(cmd *cobra.Command, args []string) {
+func runTaskDelete(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskID := args[0]
 
 	// 创建存储
-	store, err := filestore.New(cfg.Storage.Path, cfg.Storage.File.Format)
+	store, cleanup, err := getStore()
+	defer cleanup()
 	if err != nil {
-		fmt.Printf("❌ 创建存储失败: %v\n", err)
-		os.Exit(1)
+		return commandError("创建存储失败", err)
 	}
 
 	// 检查任务是否存在
 	task, err := store.GetTask(ctx, taskID)
 	if err != nil {
-		fmt.Printf("❌ 任务不存在: %v\n", err)
-		os.Exit(1)
+		return commandError("任务不存在", err)
 	}
 
 	// 确认删除
@@ -265,39 +267,42 @@ func runTaskDelete(cmd *cobra.Command, args []string) {
 		var confirm string
 		if _, err := fmt.Scanln(&confirm); err != nil {
 			fmt.Println("已取消")
-			return
+			return nil
 		}
 		if confirm != "y" && confirm != "Y" {
 			fmt.Println("已取消")
-			return
+			return nil
 		}
 	}
 
 	// 删除任务
 	if err := store.DeleteTask(ctx, taskID); err != nil {
-		fmt.Printf("❌ 删除任务失败: %v\n", err)
-		os.Exit(1)
+		return commandError("删除任务失败", err)
 	}
 
-	fmt.Printf("✅ 任务已删除: %s\n", taskID)
+	if IsQuietMode() {
+		fmt.Printf("%s:%s:deleted\n", taskID, task.Title)
+	} else {
+		fmt.Printf("✅ 任务已删除: %s\n", taskID)
+	}
+	return nil
 }
 
-func runTaskDone(cmd *cobra.Command, args []string) {
+func runTaskDone(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskID := args[0]
 
 	// 创建存储
-	store, err := filestore.New(cfg.Storage.Path, cfg.Storage.File.Format)
+	store, cleanup, err := getStore()
+	defer cleanup()
 	if err != nil {
-		fmt.Printf("❌ 创建存储失败: %v\n", err)
-		os.Exit(1)
+		return commandError("创建存储失败", err)
 	}
 
 	// 获取任务
 	task, err := store.GetTask(ctx, taskID)
 	if err != nil {
-		fmt.Printf("❌ 获取任务失败: %v\n", err)
-		os.Exit(1)
+		return commandError("获取任务失败", err)
 	}
 
 	// 标记完成
@@ -308,29 +313,32 @@ func runTaskDone(cmd *cobra.Command, args []string) {
 
 	// 保存任务
 	if err := store.SaveTask(ctx, task); err != nil {
-		fmt.Printf("❌ 保存任务失败: %v\n", err)
-		os.Exit(1)
+		return commandError("保存任务失败", err)
 	}
 
-	fmt.Printf("✅ 任务已完成: %s\n", task.Title)
+	if IsQuietMode() {
+		fmt.Printf("%s:%s:%s\n", task.ID, task.Title, task.Status)
+	} else {
+		fmt.Printf("✅ 任务已完成: %s\n", task.Title)
+	}
+	return nil
 }
 
-func runTaskUndo(cmd *cobra.Command, args []string) {
+func runTaskUndo(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskID := args[0]
 
 	// 创建存储
-	store, err := filestore.New(cfg.Storage.Path, cfg.Storage.File.Format)
+	store, cleanup, err := getStore()
+	defer cleanup()
 	if err != nil {
-		fmt.Printf("❌ 创建存储失败: %v\n", err)
-		os.Exit(1)
+		return commandError("创建存储失败", err)
 	}
 
 	// 获取任务
 	task, err := store.GetTask(ctx, taskID)
 	if err != nil {
-		fmt.Printf("❌ 获取任务失败: %v\n", err)
-		os.Exit(1)
+		return commandError("获取任务失败", err)
 	}
 
 	// 撤销完成
@@ -340,35 +348,38 @@ func runTaskUndo(cmd *cobra.Command, args []string) {
 
 	// 保存任务
 	if err := store.SaveTask(ctx, task); err != nil {
-		fmt.Printf("❌ 保存任务失败: %v\n", err)
-		os.Exit(1)
+		return commandError("保存任务失败", err)
 	}
 
-	fmt.Printf("✅ 任务已恢复: %s\n", task.Title)
+	if IsQuietMode() {
+		fmt.Printf("%s:%s:%s\n", task.ID, task.Title, task.Status)
+	} else {
+		fmt.Printf("✅ 任务已恢复: %s\n", task.Title)
+	}
+	return nil
 }
 
-func runTaskShow(cmd *cobra.Command, args []string) {
+func runTaskShow(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskID := args[0]
 
 	// 创建存储
-	store, err := filestore.New(cfg.Storage.Path, cfg.Storage.File.Format)
+	store, cleanup, err := getStore()
+	defer cleanup()
 	if err != nil {
-		fmt.Printf("❌ 创建存储失败: %v\n", err)
-		os.Exit(1)
+		return commandError("创建存储失败", err)
 	}
 
 	// 获取任务
 	task, err := store.GetTask(ctx, taskID)
 	if err != nil {
-		fmt.Printf("❌ 获取任务失败: %v\n", err)
-		os.Exit(1)
+		return commandError("获取任务失败", err)
 	}
 
 	if taskFormat == "json" {
 		data, _ := json.MarshalIndent(task, "", "  ")
 		fmt.Println(string(data))
-		return
+		return nil
 	}
 
 	// 文本格式
@@ -406,6 +417,7 @@ func runTaskShow(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Println()
+	return nil
 }
 
 // generateID 生成任务 ID

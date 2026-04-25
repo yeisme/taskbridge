@@ -184,7 +184,7 @@ func ensureMinPracticeTasks(tasks []project.PlanTask, minPracticeTasks, horizonD
 
 	nextOffset := 1
 	if len(tasks) > 0 {
-		nextOffset = minInt(horizonDays, tasks[len(tasks)-1].DueOffsetDays+1)
+		nextOffset = min(horizonDays, tasks[len(tasks)-1].DueOffsetDays+1)
 	}
 	for i := count; i < minPracticeTasks; i++ {
 		task := project.PlanTask{
@@ -201,7 +201,7 @@ func ensureMinPracticeTasks(tasks []project.PlanTask, minPracticeTasks, horizonD
 			task.Description = ensureDeliverable(task.Title, task.Description)
 		}
 		tasks = append(tasks, task)
-		nextOffset = minInt(horizonDays, nextOffset+1)
+		nextOffset = min(horizonDays, nextOffset+1)
 	}
 	return tasks
 }
@@ -212,7 +212,7 @@ func ensureMinTasks(tasks []project.PlanTask, minTasks, horizonDays int, require
 	}
 	nextOffset := 1
 	if len(tasks) > 0 {
-		nextOffset = minInt(horizonDays, tasks[len(tasks)-1].DueOffsetDays+1)
+		nextOffset = min(horizonDays, tasks[len(tasks)-1].DueOffsetDays+1)
 	}
 	for i := len(tasks); i < minTasks; i++ {
 		task := project.PlanTask{
@@ -229,7 +229,7 @@ func ensureMinTasks(tasks []project.PlanTask, minTasks, horizonDays int, require
 			task.Description = ensureDeliverable(task.Title, task.Description)
 		}
 		tasks = append(tasks, task)
-		nextOffset = minInt(horizonDays, nextOffset+1)
+		nextOffset = min(horizonDays, nextOffset+1)
 	}
 	sort.SliceStable(tasks, func(i, j int) bool {
 		return tasks[i].DueOffsetDays < tasks[j].DueOffsetDays
@@ -254,13 +254,6 @@ func hasTag(tags []string, tag string) bool {
 		}
 	}
 	return false
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func scaleOffset(offset, horizonDays int) int {

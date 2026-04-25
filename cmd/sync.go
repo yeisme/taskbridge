@@ -4,13 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/yeisme/taskbridge/internal/provider"
-	"github.com/yeisme/taskbridge/internal/storage/filestore"
 	"github.com/yeisme/taskbridge/internal/sync"
 	"github.com/yeisme/taskbridge/pkg/ui"
 )
@@ -43,7 +41,7 @@ var syncPullCmd = &cobra.Command{
   taskbridge sync pull google
   taskbridge sync pull google --dry-run`,
 	Args: cobra.ExactArgs(1),
-	Run:  runSyncPull,
+	RunE: runSyncPull,
 }
 
 // syncPushCmd 推送命令
@@ -56,7 +54,7 @@ var syncPushCmd = &cobra.Command{
   taskbridge sync push google
   taskbridge sync push google --force`,
 	Args: cobra.ExactArgs(1),
-	Run:  runSyncPush,
+	RunE: runSyncPush,
 }
 
 // syncBidirectionalCmd 双向同步命令
@@ -68,7 +66,7 @@ var syncBidirectionalCmd = &cobra.Command{
 示例:
   taskbridge sync bidirectional google`,
 	Args: cobra.ExactArgs(1),
-	Run:  runSyncBidirectional,
+	RunE: runSyncBidirectional,
 }
 
 // syncWatchCmd 持续同步命令
@@ -81,7 +79,7 @@ var syncWatchCmd = &cobra.Command{
   taskbridge sync watch google
   taskbridge sync watch google --interval 5m`,
 	Args: cobra.ExactArgs(1),
-	Run:  runSyncWatch,
+	RunE: runSyncWatch,
 }
 
 // syncStatusCmd 同步状态命令
@@ -94,7 +92,7 @@ var syncStatusCmd = &cobra.Command{
   taskbridge sync status
   taskbridge sync status google`,
 	Args: cobra.MaximumNArgs(1),
-	Run:  runSyncStatus,
+	RunE: runSyncStatus,
 }
 
 var (
@@ -138,7 +136,8 @@ func getSyncEngineForProvider(providerName string) (*sync.Engine, error) {
 	providerName = provider.ResolveProviderName(providerName)
 
 	// 创建存储
-	store, err := filestore.New(cfg.Storage.Path, cfg.Storage.File.Format)
+	store, cleanup, err := getStore()
+	defer cleanup()
 	if err != nil {
 		return nil, fmt.Errorf("创建存储失败: %w", err)
 	}
@@ -152,13 +151,12 @@ func getSyncEngineForProvider(providerName string) (*sync.Engine, error) {
 }
 
 // runSyncPull 执行拉取
-func runSyncPull(cmd *cobra.Command, args []string) {
+func runSyncPull(cmd *cobra.Command, args []string) error {
 	providerName := provider.ResolveProviderName(args[0])
 
 	engine, err := getSyncEngineForProvider(providerName)
 	if err != nil {
-		fmt.Printf("❌ 初始化同步引擎失败: %v\n", err)
-		os.Exit(1)
+		return commandError("初始化同步引擎失败", err)
 	}
 
 	opts := sync.Options{
@@ -170,21 +168,20 @@ func runSyncPull(cmd *cobra.Command, args []string) {
 
 	result, err := engine.Sync(context.Background(), opts)
 	if err != nil {
-		fmt.Printf("❌ 同步失败: %v\n", err)
-		os.Exit(1)
+		return commandError("同步失败", err)
 	}
 
 	printSyncResult(result)
+	return nil
 }
 
 // runSyncPush 执行推送
-func runSyncPush(cmd *cobra.Command, args []string) {
+func runSyncPush(cmd *cobra.Command, args []string) error {
 	providerName := provider.ResolveProviderName(args[0])
 
 	engine, err := getSyncEngineForProvider(providerName)
 	if err != nil {
-		fmt.Printf("❌ 初始化同步引擎失败: %v\n", err)
-		os.Exit(1)
+		return commandError("初始化同步引擎失败", err)
 	}
 
 	opts := sync.Options{
@@ -197,21 +194,20 @@ func runSyncPush(cmd *cobra.Command, args []string) {
 
 	result, err := engine.Sync(context.Background(), opts)
 	if err != nil {
-		fmt.Printf("❌ 同步失败: %v\n", err)
-		os.Exit(1)
+		return commandError("同步失败", err)
 	}
 
 	printSyncResult(result)
+	return nil
 }
 
 // runSyncBidirectional 执行双向同步
-func runSyncBidirectional(cmd *cobra.Command, args []string) {
+func runSyncBidirectional(cmd *cobra.Command, args []string) error {
 	providerName := provider.ResolveProviderName(args[0])
 
 	engine, err := getSyncEngineForProvider(providerName)
 	if err != nil {
-		fmt.Printf("❌ 初始化同步引擎失败: %v\n", err)
-		os.Exit(1)
+		return commandError("初始化同步引擎失败", err)
 	}
 
 	opts := sync.Options{
@@ -223,21 +219,20 @@ func runSyncBidirectional(cmd *cobra.Command, args []string) {
 
 	result, err := engine.Sync(context.Background(), opts)
 	if err != nil {
-		fmt.Printf("❌ 同步失败: %v\n", err)
-		os.Exit(1)
+		return commandError("同步失败", err)
 	}
 
 	printSyncResult(result)
+	return nil
 }
 
 // runSyncWatch 执行持续同步
-func runSyncWatch(cmd *cobra.Command, args []string) {
+func runSyncWatch(cmd *cobra.Command, args []string) error {
 	providerName := provider.ResolveProviderName(args[0])
 
 	engine, err := getSyncEngineForProvider(providerName)
 	if err != nil {
-		fmt.Printf("❌ 初始化同步引擎失败: %v\n", err)
-		os.Exit(1)
+		return commandError("初始化同步引擎失败", err)
 	}
 
 	opts := sync.Options{
@@ -250,17 +245,16 @@ func runSyncWatch(cmd *cobra.Command, args []string) {
 
 	err = engine.Watch(context.Background(), opts, syncInterval)
 	if err != nil {
-		fmt.Printf("❌ 持续同步失败: %v\n", err)
-		os.Exit(1)
+		return commandError("持续同步失败", err)
 	}
+	return nil
 }
 
 // runSyncStatus 执行状态查询
-func runSyncStatus(cmd *cobra.Command, args []string) {
+func runSyncStatus(cmd *cobra.Command, args []string) error {
 	engine, err := getSyncEngine()
 	if err != nil {
-		fmt.Printf("❌ 初始化同步引擎失败: %v\n", err)
-		os.Exit(1)
+		return commandError("初始化同步引擎失败", err)
 	}
 
 	if len(args) > 0 {
@@ -268,8 +262,7 @@ func runSyncStatus(cmd *cobra.Command, args []string) {
 		providerName := args[0]
 		status, err := engine.GetStatus(context.Background(), providerName)
 		if err != nil {
-			fmt.Printf("❌ 获取同步状态失败: %v\n", err)
-			os.Exit(1)
+			return commandError("获取同步状态失败", err)
 		}
 		printSyncStatus(status)
 	} else {
@@ -283,6 +276,7 @@ func runSyncStatus(cmd *cobra.Command, args []string) {
 			printSyncStatus(status)
 		}
 	}
+	return nil
 }
 
 // printSyncResult 打印同步结果
@@ -294,6 +288,13 @@ func printSyncResult(result *sync.Result) {
 			return
 		}
 		fmt.Println(string(data))
+		return
+	}
+
+	// Quiet mode: single line
+	if IsQuietMode() {
+		fmt.Printf("provider=%s pulled=%d pushed=%d updated=%d deleted=%d skipped=%d errors=%d\n",
+			result.Provider, result.Pulled, result.Pushed, result.Updated, result.Deleted, result.Skipped, len(result.Errors))
 		return
 	}
 
@@ -341,6 +342,21 @@ func printSyncStatus(status *sync.Status) {
 	name := providerNames[status.Provider]
 	if name == "" {
 		name = status.Provider
+	}
+
+	// Quiet mode
+	if IsQuietMode() {
+		auth := "0"
+		if status.Authenticated {
+			auth = "1"
+		}
+		lastSync := "never"
+		if !status.LastSyncTime.IsZero() {
+			lastSync = status.LastSyncTime.Format(time.RFC3339)
+		}
+		fmt.Printf("provider=%s name=%s authenticated=%s last_sync=%s pending=%d\n",
+			status.Provider, name, auth, lastSync, status.PendingChanges)
+		return
 	}
 
 	fmt.Println()

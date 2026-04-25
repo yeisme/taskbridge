@@ -2,7 +2,9 @@ package project
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -55,5 +57,26 @@ func TestFileStoreSaveAndLoad(t *testing.T) {
 	}
 	if loadedPlan.PlanID != "plan_1" {
 		t.Fatalf("unexpected plan id: %s", loadedPlan.PlanID)
+	}
+}
+
+func TestFileStorePersistsEnvelopeSchema(t *testing.T) {
+	tmp := t.TempDir()
+	ctx := context.Background()
+
+	store, err := NewFileStore(tmp)
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	if err := store.SaveProject(ctx, &Project{ID: "proj_schema", Name: "schema", GoalText: "schema", GoalType: GoalTypeLearning, Status: StatusDraft}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmp, "projects.json"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(data), `"schema": "taskbridge.project-store"`) {
+		t.Fatalf("expected envelope schema in persisted data, got %s", string(data))
 	}
 }

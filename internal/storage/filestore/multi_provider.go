@@ -14,7 +14,15 @@ import (
 
 	"github.com/yeisme/taskbridge/internal/filter"
 	"github.com/yeisme/taskbridge/internal/model"
+	"github.com/yeisme/taskbridge/internal/persistence"
 	"github.com/yeisme/taskbridge/internal/storage"
+)
+
+const (
+	manifestSchema     = "taskbridge.storage.manifest"
+	syncStateSchema    = "taskbridge.storage.sync-state"
+	mappingsSchema     = "taskbridge.storage.mappings"
+	providerMetaSchema = "taskbridge.storage.provider-meta"
 )
 
 // MultiProviderStorage 多 Provider 存储实现
@@ -51,6 +59,7 @@ type ProviderStorage struct {
 	listsFile string
 	metaFile  string
 
+	dirty     bool
 	tasks     map[string]*model.Task
 	taskLists map[string]*model.TaskList
 	meta      *model.ProviderData
@@ -91,7 +100,7 @@ func (mps *MultiProviderStorage) loadGlobalData() error {
 	// 加载清单
 	if data, err := os.ReadFile(mps.manifestFile); err == nil {
 		var manifest model.Manifest
-		if err := json.Unmarshal(data, &manifest); err != nil {
+		if _, _, err := persistence.ReadEnvelopeOrLegacy(data, manifestSchema, &manifest); err != nil {
 			return fmt.Errorf("failed to unmarshal manifest: %w", err)
 		}
 		mps.manifest = &manifest
@@ -104,7 +113,7 @@ func (mps *MultiProviderStorage) loadGlobalData() error {
 	// 加载同步状态
 	if data, err := os.ReadFile(mps.syncStateFile); err == nil {
 		var syncState model.SyncState
-		if err := json.Unmarshal(data, &syncState); err != nil {
+		if _, _, err := persistence.ReadEnvelopeOrLegacy(data, syncStateSchema, &syncState); err != nil {
 			return fmt.Errorf("failed to unmarshal sync state: %w", err)
 		}
 		mps.syncState = &syncState
@@ -117,7 +126,7 @@ func (mps *MultiProviderStorage) loadGlobalData() error {
 	// 加载映射
 	if data, err := os.ReadFile(mps.mappingsFile); err == nil {
 		var mappings model.MappingDatabase
-		if err := json.Unmarshal(data, &mappings); err != nil {
+		if _, _, err := persistence.ReadEnvelopeOrLegacy(data, mappingsSchema, &mappings); err != nil {
 			return fmt.Errorf("failed to unmarshal mappings: %w", err)
 		}
 		mps.mappings = &mappings
@@ -134,29 +143,17 @@ func (mps *MultiProviderStorage) loadGlobalData() error {
 func (mps *MultiProviderStorage) saveGlobalData() error {
 	// 保存清单
 	mps.manifest.UpdatedAt = time.Now()
-	manifestData, err := json.MarshalIndent(mps.manifest, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal manifest: %w", err)
-	}
-	if err := os.WriteFile(mps.manifestFile, manifestData, 0644); err != nil {
+	if err := persistence.WriteEnvelopeAtomic(mps.manifestFile, manifestSchema, 1, mps.manifest); err != nil {
 		return fmt.Errorf("failed to write manifest: %w", err)
 	}
 
 	// 保存同步状态
-	syncStateData, err := json.MarshalIndent(mps.syncState, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal sync state: %w", err)
-	}
-	if err := os.WriteFile(mps.syncStateFile, syncStateData, 0644); err != nil {
+	if err := persistence.WriteEnvelopeAtomic(mps.syncStateFile, syncStateSchema, 1, mps.syncState); err != nil {
 		return fmt.Errorf("failed to write sync state: %w", err)
 	}
 
 	// 保存映射
-	mappingsData, err := json.MarshalIndent(mps.mappings, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal mappings: %w", err)
-	}
-	if err := os.WriteFile(mps.mappingsFile, mappingsData, 0644); err != nil {
+	if err := persistence.WriteEnvelopeAtomic(mps.mappingsFile, mappingsSchema, 1, mps.mappings); err != nil {
 		return fmt.Errorf("failed to write mappings: %w", err)
 	}
 
@@ -534,6 +531,38 @@ func (mps *MultiProviderStorage) SetLastSyncTime(ctx context.Context, source mod
 	})
 }
 
+// Flush flushes all loaded provider stores.
+func (mps *MultiProviderStorage) Flush() error {
+	mps.mu.RLock()
+	defer mps.mu.RUnlock()
+	var errs []string
+	for name, ps := range mps.providerData {
+		if err := ps.Flush(); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("flush errors: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+// Close flushes and closes all loaded provider stores.
+func (mps *MultiProviderStorage) Close() error {
+	mps.mu.RLock()
+	defer mps.mu.RUnlock()
+	var errs []string
+	for name, ps := range mps.providerData {
+		if err := ps.Close(); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("close errors: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
 // --- ProviderStorage 方法 ---
 
 // NewProviderStorage 创建 Provider 存储
@@ -565,22 +594,34 @@ func NewProviderStorage(provider, basePath string) (*ProviderStorage, error) {
 func (ps *ProviderStorage) load() error {
 	// 加载任务
 	if data, err := os.ReadFile(ps.tasksFile); err == nil {
-		var tasks []*model.Task
-		if err := json.Unmarshal(data, &tasks); err != nil {
+		var payload tasksPersistData
+		if _, legacy, err := persistence.ReadEnvelopeOrLegacy(data, tasksSchema, &payload); err != nil {
 			return fmt.Errorf("failed to unmarshal tasks: %w", err)
+		} else if legacy && len(payload.Tasks) == 0 {
+			var legacyTasks []*model.Task
+			if _, _, err := persistence.ReadEnvelopeOrLegacy(data, "", &legacyTasks); err != nil {
+				return fmt.Errorf("failed to decode legacy tasks: %w", err)
+			}
+			payload.Tasks = legacyTasks
 		}
-		for _, task := range tasks {
+		for _, task := range payload.Tasks {
 			ps.tasks[task.ID] = task
 		}
 	}
 
 	// 加载列表
 	if data, err := os.ReadFile(ps.listsFile); err == nil {
-		var lists []*model.TaskList
-		if err := json.Unmarshal(data, &lists); err != nil {
+		var payload listsPersistData
+		if _, legacy, err := persistence.ReadEnvelopeOrLegacy(data, listsSchema, &payload); err != nil {
 			return fmt.Errorf("failed to unmarshal lists: %w", err)
+		} else if legacy && len(payload.Lists) == 0 {
+			var legacyLists []*model.TaskList
+			if _, _, err := persistence.ReadEnvelopeOrLegacy(data, "", &legacyLists); err != nil {
+				return fmt.Errorf("failed to decode legacy lists: %w", err)
+			}
+			payload.Lists = legacyLists
 		}
-		for _, list := range lists {
+		for _, list := range payload.Lists {
 			ps.taskLists[list.ID] = list
 		}
 	}
@@ -588,7 +629,7 @@ func (ps *ProviderStorage) load() error {
 	// 加载元数据
 	if data, err := os.ReadFile(ps.metaFile); err == nil {
 		var meta model.ProviderData
-		if err := json.Unmarshal(data, &meta); err != nil {
+		if _, _, err := persistence.ReadEnvelopeOrLegacy(data, providerMetaSchema, &meta); err != nil {
 			return fmt.Errorf("failed to unmarshal meta: %w", err)
 		}
 		ps.meta = &meta
@@ -609,11 +650,7 @@ func (ps *ProviderStorage) save() error {
 	for _, task := range ps.tasks {
 		tasks = append(tasks, task)
 	}
-	tasksData, err := json.MarshalIndent(tasks, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal tasks: %w", err)
-	}
-	if err := os.WriteFile(ps.tasksFile, tasksData, 0644); err != nil {
+	if err := persistence.WriteEnvelopeAtomic(ps.tasksFile, tasksSchema, 1, tasksPersistData{Tasks: tasks}); err != nil {
 		return fmt.Errorf("failed to write tasks file: %w", err)
 	}
 
@@ -622,20 +659,12 @@ func (ps *ProviderStorage) save() error {
 	for _, list := range ps.taskLists {
 		lists = append(lists, list)
 	}
-	listsData, err := json.MarshalIndent(lists, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal lists: %w", err)
-	}
-	if err := os.WriteFile(ps.listsFile, listsData, 0644); err != nil {
+	if err := persistence.WriteEnvelopeAtomic(ps.listsFile, listsSchema, 1, listsPersistData{Lists: lists}); err != nil {
 		return fmt.Errorf("failed to write lists file: %w", err)
 	}
 
 	// 保存元数据
-	metaData, err := json.MarshalIndent(ps.meta, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal meta: %w", err)
-	}
-	if err := os.WriteFile(ps.metaFile, metaData, 0644); err != nil {
+	if err := persistence.WriteEnvelopeAtomic(ps.metaFile, providerMetaSchema, 1, ps.meta); err != nil {
 		return fmt.Errorf("failed to write meta file: %w", err)
 	}
 
@@ -649,8 +678,9 @@ func (ps *ProviderStorage) SaveTask(_ context.Context, task *model.Task) error {
 
 	task.UpdatedAt = time.Now()
 	ps.tasks[task.ID] = task
+	ps.dirty = true
 
-	return ps.save()
+	return nil
 }
 
 // GetTask 获取任务
@@ -686,7 +716,8 @@ func (ps *ProviderStorage) DeleteTask(_ context.Context, id string) error {
 	defer ps.mu.Unlock()
 
 	delete(ps.tasks, id)
-	return ps.save()
+	ps.dirty = true
+	return nil
 }
 
 // SaveTasks 批量保存任务
@@ -700,7 +731,12 @@ func (ps *ProviderStorage) SaveTasks(_ context.Context, tasks []*model.Task) err
 		ps.tasks[task.ID] = task
 	}
 
-	return ps.save()
+	// SaveTasks: immediate write + clear dirty
+	if err := ps.save(); err != nil {
+		return err
+	}
+	ps.dirty = false
+	return nil
 }
 
 // QueryTasks 查询任务
@@ -927,8 +963,9 @@ func (ps *ProviderStorage) SaveTaskList(_ context.Context, list *model.TaskList)
 
 	list.UpdatedAt = time.Now()
 	ps.taskLists[list.ID] = list
+	ps.dirty = true
 
-	return ps.save()
+	return nil
 }
 
 // GetTaskList 获取任务列表
@@ -961,7 +998,8 @@ func (ps *ProviderStorage) DeleteTaskList(_ context.Context, id string) error {
 	defer ps.mu.Unlock()
 
 	delete(ps.taskLists, id)
-	return ps.save()
+	ps.dirty = true
+	return nil
 }
 
 // GetMeta 获取元数据
@@ -977,5 +1015,25 @@ func (ps *ProviderStorage) UpdateMeta(fn func(*model.ProviderData)) error {
 	defer ps.mu.Unlock()
 
 	fn(ps.meta)
-	return ps.save()
+	ps.dirty = true
+	return nil
+}
+
+// Flush writes any pending changes to disk.
+func (ps *ProviderStorage) Flush() error {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	if !ps.dirty {
+		return nil
+	}
+	if err := ps.save(); err != nil {
+		return fmt.Errorf("flush failed: %w", err)
+	}
+	ps.dirty = false
+	return nil
+}
+
+// Close flushes any pending changes and releases resources.
+func (ps *ProviderStorage) Close() error {
+	return ps.Flush()
 }

@@ -40,7 +40,7 @@ var configShowCmd = &cobra.Command{
 	Use:   "show",
 	Short: "显示当前配置",
 	Long:  `显示当前加载的配置信息`,
-	Run:   runConfigShow,
+	RunE:  runConfigShow,
 }
 
 // configSetCmd 设置配置
@@ -54,7 +54,7 @@ var configSetCmd = &cobra.Command{
   taskbridge config set providers.google.enabled true
   taskbridge config set sync.interval 10m`,
 	Args: cobra.ExactArgs(2),
-	Run:  runConfigSet,
+	RunE: runConfigSet,
 }
 
 // configGetCmd 获取配置
@@ -67,7 +67,7 @@ var configGetCmd = &cobra.Command{
   taskbridge config get storage.path
   taskbridge config get providers.google.enabled`,
 	Args: cobra.ExactArgs(1),
-	Run:  runConfigGet,
+	RunE: runConfigGet,
 }
 
 // configInitCmd 初始化配置
@@ -75,7 +75,7 @@ var configInitCmd = &cobra.Command{
 	Use:   "init",
 	Short: "初始化配置文件",
 	Long:  `在当前目录或指定位置创建默认配置文件`,
-	Run:   runConfigInit,
+	RunE:  runConfigInit,
 }
 
 // configValidateCmd 验证配置
@@ -83,7 +83,7 @@ var configValidateCmd = &cobra.Command{
 	Use:   "validate",
 	Short: "验证配置",
 	Long:  `验证当前配置是否有效`,
-	Run:   runConfigValidate,
+	RunE:  runConfigValidate,
 }
 
 func init() {
@@ -100,35 +100,32 @@ func init() {
 	configInitCmd.Flags().StringVar(&cfgFile, "output", "", "配置文件输出路径")
 }
 
-func runConfigShow(cmd *cobra.Command, args []string) {
+func runConfigShow(cmd *cobra.Command, args []string) error {
 	switch configFormat {
 	case "json":
 		data, err := json.MarshalIndent(cfg, "", "  ")
 		if err != nil {
-			fmt.Printf("❌ 序列化配置失败: %v\n", err)
-			os.Exit(1)
+			return commandError("序列化配置失败", err)
 		}
 		fmt.Println(string(data))
 	default:
 		data, err := yaml.Marshal(cfg)
 		if err != nil {
-			fmt.Printf("❌ 序列化配置失败: %v\n", err)
-			os.Exit(1)
+			return commandError("序列化配置失败", err)
 		}
 		fmt.Println(string(data))
 	}
 
 	fmt.Println("\n配置来源: 默认值 + 环境变量 + 命令行参数（config.yaml 已弃用）")
+	return nil
 }
 
-func runConfigSet(cmd *cobra.Command, args []string) {
+func runConfigSet(cmd *cobra.Command, args []string) error {
 	_ = args
-	fmt.Println("❌ `taskbridge config set` 已弃用。请改用环境变量或命令行参数。")
-	fmt.Println("   示例: TASKBRIDGE_STORAGE_PATH=./data taskbridge list")
-	os.Exit(1)
+	return usageError("`taskbridge config set` 已弃用。请改用环境变量或命令行参数。示例: TASKBRIDGE_STORAGE_PATH=./data taskbridge list")
 }
 
-func runConfigGet(cmd *cobra.Command, args []string) {
+func runConfigGet(cmd *cobra.Command, args []string) error {
 	key := args[0]
 
 	// 简化实现，根据 key 获取值
@@ -230,8 +227,7 @@ func runConfigGet(cmd *cobra.Command, args []string) {
 			value = cfg.App
 		}
 	default:
-		fmt.Printf("❌ 未知的配置项: %s\n", key)
-		os.Exit(1)
+		return usageError("未知的配置项: " + key)
 	}
 
 	// 输出值
@@ -241,22 +237,22 @@ func runConfigGet(cmd *cobra.Command, args []string) {
 	} else {
 		fmt.Printf("%s", string(data))
 	}
+	return nil
 }
 
-func runConfigInit(cmd *cobra.Command, args []string) {
+func runConfigInit(cmd *cobra.Command, args []string) error {
 	_ = cmd
 	_ = args
-	fmt.Println("❌ `taskbridge config init` 已弃用。请改用环境变量或命令行参数。")
-	fmt.Println("   示例: TASKBRIDGE_PROVIDERS=microsoft,todoist taskbridge sync status")
-	os.Exit(1)
+	return usageError("`taskbridge config init` 已弃用。请改用环境变量或命令行参数。示例: TASKBRIDGE_PROVIDERS=microsoft,todoist taskbridge sync status")
 }
 
-func runConfigValidate(cmd *cobra.Command, args []string) {
+func runConfigValidate(cmd *cobra.Command, args []string) error {
 	_ = cmd
 	_ = args
 
 	exitCode := writeValidationReport(os.Stdout, cfg.Validate())
 	if exitCode != 0 {
-		os.Exit(exitCode)
+		return &CLIError{Message: "配置验证失败", ExitCode: exitCode}
 	}
+	return nil
 }

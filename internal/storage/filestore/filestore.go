@@ -14,6 +14,7 @@ import (
 
 	"github.com/yeisme/taskbridge/internal/filter"
 	"github.com/yeisme/taskbridge/internal/model"
+	"github.com/yeisme/taskbridge/internal/persistence"
 	"github.com/yeisme/taskbridge/internal/storage"
 )
 
@@ -31,6 +32,8 @@ type FileStorage struct {
 	listsFile string
 	// syncFile 同步状态文件路径
 	syncFile string
+	// dirty 是否有未写盘的变更
+	dirty bool
 
 	// tasks 任务映射表
 	tasks map[string]*model.Task
@@ -39,6 +42,24 @@ type FileStorage struct {
 	// syncTimes 同步时间记录
 	syncTimes map[model.TaskSource]time.Time
 }
+
+type tasksPersistData struct {
+	Tasks []*model.Task `json:"tasks"`
+}
+
+type listsPersistData struct {
+	Lists []*model.TaskList `json:"lists"`
+}
+
+type syncPersistData struct {
+	SyncTimes map[string]string `json:"sync_times"`
+}
+
+const (
+	tasksSchema = "taskbridge.storage.tasks"
+	listsSchema = "taskbridge.storage.lists"
+	syncSchema  = "taskbridge.storage.sync"
+)
 
 // New 创建文件存储实例
 func New(basePath, format string) (*FileStorage, error) {
@@ -73,33 +94,60 @@ func New(basePath, format string) (*FileStorage, error) {
 func (fs *FileStorage) load() error {
 	// 加载任务
 	if data, err := os.ReadFile(fs.tasksFile); err == nil {
-		var tasks []*model.Task
-		if err := json.Unmarshal(data, &tasks); err != nil {
-			return fmt.Errorf("failed to unmarshal tasks: %w", err)
+		var payload tasksPersistData
+		if _, legacy, err := persistence.ReadEnvelopeOrLegacy(data, tasksSchema, &payload); err != nil {
+			var legacyTasks []*model.Task
+			if _, _, legacyErr := persistence.ReadEnvelopeOrLegacy(data, "", &legacyTasks); legacyErr != nil {
+				return fmt.Errorf("failed to unmarshal tasks: %w", err)
+			}
+			payload.Tasks = legacyTasks
+		} else if legacy && len(payload.Tasks) == 0 {
+			// Backward compatibility: legacy payload was a raw []*model.Task array.
+			var legacyTasks []*model.Task
+			if _, _, err := persistence.ReadEnvelopeOrLegacy(data, "", &legacyTasks); err != nil {
+				return fmt.Errorf("failed to decode legacy tasks: %w", err)
+			}
+			payload.Tasks = legacyTasks
 		}
-		for _, task := range tasks {
+		for _, task := range payload.Tasks {
 			fs.tasks[task.ID] = task
 		}
 	}
 
 	// 加载任务列表
 	if data, err := os.ReadFile(fs.listsFile); err == nil {
-		var lists []*model.TaskList
-		if err := json.Unmarshal(data, &lists); err != nil {
-			return fmt.Errorf("failed to unmarshal lists: %w", err)
+		var payload listsPersistData
+		if _, legacy, err := persistence.ReadEnvelopeOrLegacy(data, listsSchema, &payload); err != nil {
+			var legacyLists []*model.TaskList
+			if _, _, legacyErr := persistence.ReadEnvelopeOrLegacy(data, "", &legacyLists); legacyErr != nil {
+				return fmt.Errorf("failed to unmarshal lists: %w", err)
+			}
+			payload.Lists = legacyLists
+		} else if legacy && len(payload.Lists) == 0 {
+			var legacyLists []*model.TaskList
+			if _, _, err := persistence.ReadEnvelopeOrLegacy(data, "", &legacyLists); err != nil {
+				return fmt.Errorf("failed to decode legacy lists: %w", err)
+			}
+			payload.Lists = legacyLists
 		}
-		for _, list := range lists {
+		for _, list := range payload.Lists {
 			fs.taskLists[list.ID] = list
 		}
 	}
 
 	// 加载同步时间
 	if data, err := os.ReadFile(fs.syncFile); err == nil {
-		var syncData map[string]string
-		if err := json.Unmarshal(data, &syncData); err != nil {
+		var payload syncPersistData
+		if _, legacy, err := persistence.ReadEnvelopeOrLegacy(data, syncSchema, &payload); err != nil {
 			return fmt.Errorf("failed to unmarshal sync times: %w", err)
+		} else if legacy && len(payload.SyncTimes) == 0 {
+			var legacySync map[string]string
+			if _, _, err := persistence.ReadEnvelopeOrLegacy(data, "", &legacySync); err != nil {
+				return fmt.Errorf("failed to decode legacy sync times: %w", err)
+			}
+			payload.SyncTimes = legacySync
 		}
-		for source, timeStr := range syncData {
+		for source, timeStr := range payload.SyncTimes {
 			t, err := time.Parse(time.RFC3339, timeStr)
 			if err == nil {
 				fs.syncTimes[model.TaskSource(source)] = t
@@ -117,11 +165,7 @@ func (fs *FileStorage) save() error {
 	for _, task := range fs.tasks {
 		tasks = append(tasks, task)
 	}
-	tasksData, err := json.MarshalIndent(tasks, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal tasks: %w", err)
-	}
-	if err := os.WriteFile(fs.tasksFile, tasksData, 0644); err != nil {
+	if err := persistence.WriteEnvelopeAtomic(fs.tasksFile, tasksSchema, 1, tasksPersistData{Tasks: tasks}); err != nil {
 		return fmt.Errorf("failed to write tasks file: %w", err)
 	}
 
@@ -130,11 +174,7 @@ func (fs *FileStorage) save() error {
 	for _, list := range fs.taskLists {
 		lists = append(lists, list)
 	}
-	listsData, err := json.MarshalIndent(lists, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal lists: %w", err)
-	}
-	if err := os.WriteFile(fs.listsFile, listsData, 0644); err != nil {
+	if err := persistence.WriteEnvelopeAtomic(fs.listsFile, listsSchema, 1, listsPersistData{Lists: lists}); err != nil {
 		return fmt.Errorf("failed to write lists file: %w", err)
 	}
 
@@ -143,11 +183,7 @@ func (fs *FileStorage) save() error {
 	for source, t := range fs.syncTimes {
 		syncData[string(source)] = t.Format(time.RFC3339)
 	}
-	syncDataBytes, err := json.MarshalIndent(syncData, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal sync times: %w", err)
-	}
-	if err := os.WriteFile(fs.syncFile, syncDataBytes, 0644); err != nil {
+	if err := persistence.WriteEnvelopeAtomic(fs.syncFile, syncSchema, 1, syncPersistData{SyncTimes: syncData}); err != nil {
 		return fmt.Errorf("failed to write sync file: %w", err)
 	}
 
@@ -161,8 +197,9 @@ func (fs *FileStorage) SaveTask(_ context.Context, task *model.Task) error {
 
 	task.UpdatedAt = time.Now()
 	fs.tasks[task.ID] = task
+	fs.dirty = true
 
-	return fs.save()
+	return nil
 }
 
 // GetTask 获取任务
@@ -203,7 +240,8 @@ func (fs *FileStorage) DeleteTask(ctx context.Context, id string) error {
 	defer fs.mu.Unlock()
 
 	delete(fs.tasks, id)
-	return fs.save()
+	fs.dirty = true
+	return nil
 }
 
 // SaveTasks 批量保存任务
@@ -217,7 +255,12 @@ func (fs *FileStorage) SaveTasks(ctx context.Context, tasks []*model.Task) error
 		fs.tasks[task.ID] = task
 	}
 
-	return fs.save()
+	// SaveTasks: immediate write + clear dirty
+	if err := fs.save(); err != nil {
+		return err
+	}
+	fs.dirty = false
+	return nil
 }
 
 // QueryTasks 查询任务
@@ -441,8 +484,9 @@ func (fs *FileStorage) SaveTaskList(ctx context.Context, list *model.TaskList) e
 
 	list.UpdatedAt = time.Now()
 	fs.taskLists[list.ID] = list
+	fs.dirty = true
 
-	return fs.save()
+	return nil
 }
 
 // GetTaskList 获取任务列表
@@ -475,7 +519,8 @@ func (fs *FileStorage) DeleteTaskList(ctx context.Context, id string) error {
 	defer fs.mu.Unlock()
 
 	delete(fs.taskLists, id)
-	return fs.save()
+	fs.dirty = true
+	return nil
 }
 
 // ExportToJSON 导出为 JSON
@@ -559,5 +604,25 @@ func (fs *FileStorage) SetLastSyncTime(ctx context.Context, source model.TaskSou
 	defer fs.mu.Unlock()
 
 	fs.syncTimes[source] = t
-	return fs.save()
+	fs.dirty = true
+	return nil
+}
+
+// Flush writes any pending changes to disk.
+func (fs *FileStorage) Flush() error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	if !fs.dirty {
+		return nil
+	}
+	if err := fs.save(); err != nil {
+		return fmt.Errorf("flush failed: %w", err)
+	}
+	fs.dirty = false
+	return nil
+}
+
+// Close flushes any pending changes and releases resources.
+func (fs *FileStorage) Close() error {
+	return fs.Flush()
 }

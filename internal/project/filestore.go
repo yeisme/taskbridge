@@ -2,7 +2,6 @@ package project
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,12 +9,19 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/yeisme/taskbridge/internal/persistence"
 )
 
 type persistData struct {
 	Projects []*Project        `json:"projects"`
 	Plans    []*PlanSuggestion `json:"plans"`
 }
+
+const (
+	projectStoreSchema  = "taskbridge.project-store"
+	projectStoreVersion = 1
+)
 
 // FileStore 项目文件存储。
 type FileStore struct {
@@ -140,8 +146,8 @@ func (s *FileStore) load() error {
 	}
 
 	var payload persistData
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return fmt.Errorf("failed to unmarshal project store: %w", err)
+	if _, _, err := persistence.ReadEnvelopeOrLegacy(data, projectStoreSchema, &payload); err != nil {
+		return fmt.Errorf("failed to decode project store: %w", err)
 	}
 
 	for _, p := range payload.Projects {
@@ -177,11 +183,7 @@ func (s *FileStore) save() error {
 	})
 
 	payload := persistData{Projects: projects, Plans: plans}
-	bytes, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal project store: %w", err)
-	}
-	if err := os.WriteFile(s.filePath, bytes, 0o644); err != nil {
+	if err := persistence.WriteEnvelopeAtomic(s.filePath, projectStoreSchema, projectStoreVersion, payload); err != nil {
 		return fmt.Errorf("failed to write project store: %w", err)
 	}
 	return nil

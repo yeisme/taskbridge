@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/yeisme/taskbridge/internal/model"
 	"github.com/yeisme/taskbridge/internal/storage"
-	"github.com/yeisme/taskbridge/internal/storage/filestore"
 )
 
 var (
@@ -49,7 +47,7 @@ var analyzeQuadrantCmd = &cobra.Command{
   Q2 重要不紧急   - 计划安排
   Q3 紧急不重要   - 委托他人
   Q4 不紧急不重要 - 考虑删除`,
-	Run: runAnalyzeQuadrant,
+	RunE: runAnalyzeQuadrant,
 }
 
 // analyzePriorityCmd 优先级分析
@@ -57,7 +55,7 @@ var analyzePriorityCmd = &cobra.Command{
 	Use:   "priority",
 	Short: "优先级分析",
 	Long:  `按优先级分布分析任务`,
-	Run:   runAnalyzePriority,
+	RunE:  runAnalyzePriority,
 }
 
 // analyzeTimeCmd 时间分析
@@ -65,7 +63,7 @@ var analyzeTimeCmd = &cobra.Command{
 	Use:   "time",
 	Short: "时间分布分析",
 	Long:  `按截止日期和创建时间分析任务分布`,
-	Run:   runAnalyzeTime,
+	RunE:  runAnalyzeTime,
 }
 
 // analyzeTrendCmd 趋势分析
@@ -73,7 +71,7 @@ var analyzeTrendCmd = &cobra.Command{
 	Use:   "trend",
 	Short: "趋势分析",
 	Long:  `分析任务完成趋势`,
-	Run:   runAnalyzeTrend,
+	RunE:  runAnalyzeTrend,
 }
 
 // analyzeReportCmd 综合报告
@@ -81,7 +79,7 @@ var analyzeReportCmd = &cobra.Command{
 	Use:   "report",
 	Short: "生成综合报告",
 	Long:  `生成包含所有分析的综合报告`,
-	Run:   runAnalyzeReport,
+	RunE:  runAnalyzeReport,
 }
 
 func init() {
@@ -101,7 +99,8 @@ func init() {
 // getTasksForAnalysis 获取用于分析的任务
 func getTasksForAnalysis() ([]model.Task, error) {
 	ctx := context.Background()
-	store, err := filestore.New(cfg.Storage.Path, cfg.Storage.File.Format)
+	store, cleanup, err := getStore()
+	defer cleanup()
 	if err != nil {
 		return nil, fmt.Errorf("创建存储失败: %w", err)
 	}
@@ -132,11 +131,10 @@ type QuadrantData struct {
 	Tasks       []string `json:"tasks,omitempty"`
 }
 
-func runAnalyzeQuadrant(_ *cobra.Command, _ []string) {
+func runAnalyzeQuadrant(_ *cobra.Command, _ []string) error {
 	tasks, err := getTasksForAnalysis()
 	if err != nil {
-		fmt.Printf("❌ %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
 	analysis := QuadrantAnalysis{
@@ -195,7 +193,7 @@ func runAnalyzeQuadrant(_ *cobra.Command, _ []string) {
 	if analyzeFormat == "json" {
 		data, _ := json.MarshalIndent(analysis, "", "  ")
 		fmt.Println(string(data))
-		return
+	return nil
 	}
 
 	// 文本格式
@@ -217,6 +215,7 @@ func runAnalyzeQuadrant(_ *cobra.Command, _ []string) {
 	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
 	fmt.Println()
 	fmt.Printf("总计: %d 个任务 (已完成: %d)\n", total, total-activeTotal)
+	return nil
 }
 
 // PriorityAnalysis 优先级分析结果
@@ -244,11 +243,10 @@ type SummaryData struct {
 	AvgPriorityScore float64 `json:"avg_priority_score"`
 }
 
-func runAnalyzePriority(_ *cobra.Command, _ []string) {
+func runAnalyzePriority(_ *cobra.Command, _ []string) error {
 	tasks, err := getTasksForAnalysis()
 	if err != nil {
-		fmt.Printf("❌ %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
 	analysis := PriorityAnalysis{
@@ -310,7 +308,7 @@ func runAnalyzePriority(_ *cobra.Command, _ []string) {
 	if analyzeFormat == "json" {
 		data, _ := json.MarshalIndent(analysis, "", "  ")
 		fmt.Println(string(data))
-		return
+	return nil
 	}
 
 	// 文本格式
@@ -335,6 +333,7 @@ func runAnalyzePriority(_ *cobra.Command, _ []string) {
 	if analysis.Summary.AvgPriorityScore > 0 {
 		fmt.Printf("平均优先级分数: %.1f\n", analysis.Summary.AvgPriorityScore)
 	}
+	return nil
 }
 
 // TimeAnalysis 时间分析结果
@@ -356,11 +355,10 @@ type TimeData struct {
 	Tasks       []string `json:"tasks,omitempty"`
 }
 
-func runAnalyzeTime(_ *cobra.Command, _ []string) {
+func runAnalyzeTime(_ *cobra.Command, _ []string) error {
 	tasks, err := getTasksForAnalysis()
 	if err != nil {
-		fmt.Printf("❌ %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
 	now := time.Now()
@@ -422,7 +420,7 @@ func runAnalyzeTime(_ *cobra.Command, _ []string) {
 	if analyzeFormat == "json" {
 		data, _ := json.MarshalIndent(analysis, "", "  ")
 		fmt.Println(string(data))
-		return
+	return nil
 	}
 
 	// 文本格式
@@ -439,6 +437,7 @@ func runAnalyzeTime(_ *cobra.Command, _ []string) {
 	fmt.Printf("│ 📁 更远         │ %-4d 个任务                      │\n", analysis.Future.Count)
 	fmt.Printf("│ ❓ 无截止日期    │ %-4d 个任务                      │\n", analysis.NoDueDate.Count)
 	fmt.Println("└────────────────────────────────────────────────────────┘")
+	return nil
 }
 
 // TrendAnalysis 趋势分析结果
@@ -454,11 +453,10 @@ type DayData struct {
 	Completed int    `json:"completed"`
 }
 
-func runAnalyzeTrend(cmd *cobra.Command, args []string) {
+func runAnalyzeTrend(cmd *cobra.Command, args []string) error {
 	tasks, err := getTasksForAnalysis()
 	if err != nil {
-		fmt.Printf("❌ %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
 	// 统计过去7天的完成情况
@@ -508,7 +506,7 @@ func runAnalyzeTrend(cmd *cobra.Command, args []string) {
 	if analyzeFormat == "json" {
 		data, _ := json.MarshalIndent(analysis, "", "  ")
 		fmt.Println(string(data))
-		return
+	return nil
 	}
 
 	// 文本格式
@@ -526,13 +524,13 @@ func runAnalyzeTrend(cmd *cobra.Command, args []string) {
 	fmt.Println("└────────────────────────────────────────────────────────┘")
 	fmt.Println()
 	fmt.Printf("本周完成: %d 个任务 | 日均: %.1f 个\n", totalCompleted, weeklyAvg)
+	return nil
 }
 
-func runAnalyzeReport(cmd *cobra.Command, args []string) {
+func runAnalyzeReport(cmd *cobra.Command, args []string) error {
 	tasks, err := getTasksForAnalysis()
 	if err != nil {
-		fmt.Printf("❌ %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
 	fmt.Println()
@@ -640,4 +638,5 @@ func runAnalyzeReport(cmd *cobra.Command, args []string) {
 
 	fmt.Println("══════════════════════════════════════════════════════════════")
 	fmt.Printf("报告生成时间: %s\n", time.Now().Format("2006-01-02 15:04:05"))
+	return nil
 }

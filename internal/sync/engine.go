@@ -286,6 +286,11 @@ func (e *Engine) pull(ctx context.Context, p provider.Provider, result *Result, 
 	// 更新同步时间
 	_ = e.storage.SetLastSyncTime(ctx, source, time.Now())
 
+	// Flush pending writes
+	if f, ok := e.storage.(storage.Flushable); ok {
+		_ = f.Flush()
+	}
+
 	log.Info().Int("pulled", result.Pulled).Msg("拉取完成")
 	return nil
 }
@@ -430,6 +435,11 @@ func (e *Engine) push(ctx context.Context, p provider.Provider, result *Result, 
 	// 双向比对：删除远程存在但本地不存在的任务
 	if opts.DeleteRemote {
 		e.deleteRemoteTasks(ctx, p, taskLists, localSourceRawIDs, opts.DryRun, result)
+	}
+
+	// Flush pending writes
+	if f, ok := e.storage.(storage.Flushable); ok {
+		_ = f.Flush()
 	}
 
 	log.Info().Int("pushed", result.Pushed).Int("updated", result.Updated).Int("deleted", result.Deleted).Msg("推送完成")
@@ -579,6 +589,11 @@ func (e *Engine) bidirectional(ctx context.Context, p provider.Provider, result 
 	err = e.push(ctx, p, result, opts)
 	if err != nil {
 		return fmt.Errorf("推送失败: %w", err)
+	}
+
+	// Flush pending writes after bidirectional sync
+	if f, ok := e.storage.(storage.Flushable); ok {
+		_ = f.Flush()
 	}
 
 	log.Info().Msg("双向同步完成")

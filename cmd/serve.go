@@ -14,7 +14,6 @@ import (
 
 	"github.com/yeisme/taskbridge/internal/auth"
 	"github.com/yeisme/taskbridge/internal/loader"
-	"github.com/yeisme/taskbridge/internal/storage/filestore"
 	syncengine "github.com/yeisme/taskbridge/internal/sync"
 )
 
@@ -32,7 +31,7 @@ var serveCmd = &cobra.Command{
 示例:
   taskbridge serve                    # 启动服务（默认配置）
   taskbridge serve --check-interval 2m # 设置检查间隔为 2 分钟`,
-	Run: runServe,
+	RunE: runServe,
 }
 
 var (
@@ -40,6 +39,7 @@ var (
 	serveCheckInterval     string
 	serveEnableSync        bool
 	serveSyncInterval      string
+	serveSyncOnStart       bool
 	serveEnableHealth      bool
 	serveHealthPort        int
 	serveRefreshBuffer     string
@@ -57,6 +57,7 @@ func init() {
 	// 同步配置
 	serveCmd.Flags().BoolVar(&serveEnableSync, "enable-sync", false, "启用定时同步")
 	serveCmd.Flags().StringVar(&serveSyncInterval, "sync-interval", "5m", "同步间隔")
+	serveCmd.Flags().BoolVar(&serveSyncOnStart, "sync-on-start", true, "启动服务后立即执行一次同步")
 
 	// 健康检查配置
 	serveCmd.Flags().BoolVar(&serveEnableHealth, "enable-health", false, "启用健康检查端点")
@@ -64,20 +65,18 @@ func init() {
 }
 
 // runServe 执行后台服务
-func runServe(cmd *cobra.Command, args []string) {
+func runServe(cmd *cobra.Command, args []string) error {
 	fmt.Println("🚀 TaskBridge 后台服务启动中...")
 
 	// 解析配置
 	checkInterval, err := time.ParseDuration(serveCheckInterval)
 	if err != nil {
-		fmt.Printf("❌ 无效的检查间隔: %v\n", err)
-		os.Exit(1)
+		return commandError("无效的检查间隔", err)
 	}
 
 	refreshBuffer, err := time.ParseDuration(serveRefreshBuffer)
 	if err != nil {
-		fmt.Printf("❌ 无效的刷新提前量: %v\n", err)
-		os.Exit(1)
+		return commandError("无效的刷新提前量", err)
 	}
 
 	// 创建 Token 管理器
@@ -108,14 +107,13 @@ func runServe(cmd *cobra.Command, args []string) {
 	if serveEnableSync && len(loadResult.Providers) > 0 {
 		syncInterval, err := time.ParseDuration(serveSyncInterval)
 		if err != nil {
-			fmt.Printf("❌ 无效的同步间隔: %v\n", err)
-			os.Exit(1)
+			return commandError("无效的同步间隔", err)
 		}
 
-		store, err := filestore.New(cfg.Storage.Path, cfg.Storage.File.Format)
+		store, cleanup, err := getStore()
+		defer cleanup()
 		if err != nil {
-			fmt.Printf("❌ 初始化同步存储失败: %v\n", err)
-			os.Exit(1)
+			return commandError("初始化同步存储失败", err)
 		}
 
 		scheduler = syncengine.NewScheduler(syncengine.SchedulerConfig{
@@ -131,8 +129,7 @@ func runServe(cmd *cobra.Command, args []string) {
 	// 启动 Token 自动刷新
 	if serveEnableAutoRefresh {
 		if err := tokenManager.Start(ctx); err != nil {
-			fmt.Printf("❌ 启动 Token 管理器失败: %v\n", err)
-			os.Exit(1)
+			return commandError("启动 Token 管理器失败", err)
 		}
 		fmt.Printf("✅ Token 自动刷新已启用 (检查间隔: %s, 刷新提前量: %s)\n", checkInterval, refreshBuffer)
 	}
@@ -142,10 +139,16 @@ func runServe(cmd *cobra.Command, args []string) {
 
 	if scheduler != nil {
 		if err := scheduler.Start(ctx); err != nil {
-			fmt.Printf("❌ 启动定时同步失败: %v\n", err)
-			os.Exit(1)
+			return commandError("启动定时同步失败", err)
 		}
 		fmt.Printf("🔄 定时同步已启用 (间隔: %s)\n", serveSyncInterval)
+		if serveSyncOnStart {
+			if result, err := triggerInitialSync(ctx, scheduler); err != nil {
+				fmt.Printf("⚠️ 启动时首次同步失败: %v\n", err)
+			} else {
+				fmt.Printf("✅ 启动时首次同步完成 (pulled=%d, pushed=%d, errors=%d)\n", result.Pulled, result.Pushed, len(result.Errors))
+			}
+		}
 	} else if serveEnableSync {
 		fmt.Println("⚠️ 未找到可用已认证 Provider，定时同步未启动")
 	}
@@ -174,6 +177,7 @@ func runServe(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Println("👋 服务已停止")
+	return nil
 }
 
 // registerProviders 注册所有已成功加载的 Provider，并输出所有 Provider 状态。
@@ -245,6 +249,7 @@ type SchedulerHealthStatus struct {
 	Running       bool      `json:"running"`
 	Interval      string    `json:"interval,omitempty"`
 	LastRunTime   time.Time `json:"last_run_time,omitempty"`
+	NextRunTime   time.Time `json:"next_run_time,omitempty"`
 	LastRunStatus string    `json:"last_run_status,omitempty"`
 	TotalRuns     int       `json:"total_runs"`
 	SuccessRuns   int       `json:"success_runs"`
@@ -252,12 +257,15 @@ type SchedulerHealthStatus struct {
 }
 
 type HealthResponse struct {
-	StartTime   time.Time                       `json:"start_time"`
-	Status      string                          `json:"status"`
-	Providers   map[string]ProviderHealthStatus `json:"providers"`
-	TokenStatus map[string]TokenHealthStatus    `json:"token_status"`
-	Scheduler   *SchedulerHealthStatus          `json:"scheduler,omitempty"`
-	Uptime      string                          `json:"uptime"`
+	StartTime           time.Time                       `json:"start_time"`
+	Status              string                          `json:"status"`
+	Live                bool                            `json:"live"`
+	Ready               bool                            `json:"ready"`
+	TokenManagerRunning bool                            `json:"token_manager_running"`
+	Providers           map[string]ProviderHealthStatus `json:"providers"`
+	TokenStatus         map[string]TokenHealthStatus    `json:"token_status"`
+	Scheduler           *SchedulerHealthStatus          `json:"scheduler,omitempty"`
+	Uptime              string                          `json:"uptime"`
 }
 
 func DetermineHealthStatus(providers map[string]ProviderHealthStatus) string {
@@ -272,24 +280,69 @@ func DetermineHealthStatus(providers map[string]ProviderHealthStatus) string {
 	return "healthy"
 }
 
+type schedulerStatusProvider interface {
+	IsRunning() bool
+	GetStats() syncengine.SchedulerStats
+	NextRunTime() time.Time
+}
+
+type schedulerTrigger interface {
+	Trigger(context.Context) (*syncengine.Result, error)
+}
+
 func NewHealthHandler(health *HealthResponse) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(health)
+		writeJSON(w, http.StatusOK, health)
 	})
 }
 
 func newDynamicHealthHandler(snapshot func() *HealthResponse) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(snapshot())
+		writeJSON(w, http.StatusOK, snapshot())
 	})
+}
+
+func newServeStatusMux(snapshot func() *HealthResponse) http.Handler {
+	mux := http.NewServeMux()
+
+	mux.Handle("/health", newDynamicHealthHandler(snapshot))
+	mux.Handle("/healthz", newDynamicHealthHandler(snapshot))
+	mux.HandleFunc("/livez", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status": "alive",
+			"live":   true,
+		})
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		health := snapshot()
+		statusCode := http.StatusOK
+		state := "ready"
+		if !health.Ready {
+			statusCode = http.StatusServiceUnavailable
+			state = "not_ready"
+		}
+		writeJSON(w, statusCode, map[string]interface{}{
+			"status": state,
+			"ready":  health.Ready,
+		})
+	})
+	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, snapshot())
+	})
+
+	return mux
+}
+
+func writeJSON(w http.ResponseWriter, statusCode int, payload interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func buildHealthResponse(
 	tm *auth.TokenManager,
 	loadResult *loader.ProviderLoadResult,
-	scheduler *syncengine.Scheduler,
+	scheduler schedulerStatusProvider,
 	schedulerInterval string,
 ) *HealthResponse {
 	providers := make(map[string]ProviderHealthStatus, len(loadResult.Statuses))
@@ -320,19 +373,23 @@ func buildHealthResponse(
 	}
 
 	health := &HealthResponse{
-		StartTime:   startTime,
-		Providers:   providers,
-		TokenStatus: tokenStatus,
-		Uptime:      time.Since(startTime).Truncate(time.Second).String(),
+		StartTime:           startTime,
+		Live:                true,
+		TokenManagerRunning: tm.IsRunning(),
+		Providers:           providers,
+		TokenStatus:         tokenStatus,
+		Uptime:              time.Since(startTime).Truncate(time.Second).String(),
 	}
 
 	health.Status = DetermineHealthStatus(providers)
+	health.Ready = determineReadyStatus(health.Status, scheduler)
 	if scheduler != nil {
 		stats := scheduler.GetStats()
 		health.Scheduler = &SchedulerHealthStatus{
 			Running:       scheduler.IsRunning(),
 			Interval:      schedulerInterval,
 			LastRunTime:   stats.LastRunTime,
+			NextRunTime:   scheduler.NextRunTime(),
 			LastRunStatus: stats.LastRunStatus,
 			TotalRuns:     stats.TotalRuns,
 			SuccessRuns:   stats.SuccessRuns,
@@ -345,13 +402,27 @@ func buildHealthResponse(
 
 var startTime = time.Now()
 
+func determineReadyStatus(healthStatus string, scheduler schedulerStatusProvider) bool {
+	if healthStatus != "healthy" {
+		return false
+	}
+	if scheduler == nil {
+		return true
+	}
+	return scheduler.IsRunning()
+}
+
+func triggerInitialSync(ctx context.Context, scheduler schedulerTrigger) (*syncengine.Result, error) {
+	return scheduler.Trigger(ctx)
+}
+
 // startHealthCheck 启动健康检查
 func startHealthCheck(ctx context.Context, port int, snapshot func() *HealthResponse) {
 	fmt.Printf("🏥 健康检查端点: http://localhost:%d/health\n", port)
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
-		Handler: newDynamicHealthHandler(snapshot),
+		Handler: newServeStatusMux(snapshot),
 	}
 
 	go func() {
