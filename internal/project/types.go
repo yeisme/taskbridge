@@ -10,6 +10,9 @@ const (
 	StatusSplitSuggested ProjectStatus = "split_suggested"
 	StatusConfirmed      ProjectStatus = "confirmed"
 	StatusSynced         ProjectStatus = "synced"
+	StatusActive         ProjectStatus = "active"
+	StatusCompleted      ProjectStatus = "completed"
+	StatusArchived       ProjectStatus = "archived"
 )
 
 // GoalType 目标类型。
@@ -34,6 +37,9 @@ type Project struct {
 	Source       string        `json:"source,omitempty"`
 	HorizonDays  int           `json:"horizon_days,omitempty"`
 	LatestPlanID string        `json:"latest_plan_id,omitempty"`
+	CompletedAt  *time.Time    `json:"completed_at,omitempty"`
+	ArchivedAt   *time.Time    `json:"archived_at,omitempty"`
+	Summary      string        `json:"summary,omitempty"`
 	CreatedAt    time.Time     `json:"created_at"`
 	UpdatedAt    time.Time     `json:"updated_at"`
 }
@@ -41,7 +47,7 @@ type Project struct {
 // PlanTask 拆分后的任务建议。
 type PlanTask struct {
 	// ID 是计划内任务 ID（非真实任务 ID），用于稳定映射与追踪。
-	ID              string   `json:"id,omitempty"`
+	ID string `json:"id,omitempty"`
 	// ParentID 是父计划任务 ID，用于在确认阶段恢复父子关系。
 	ParentID        string   `json:"parent_id,omitempty"`
 	Title           string   `json:"title"`

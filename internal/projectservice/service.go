@@ -48,6 +48,22 @@ type ConfirmInput struct {
 	WriteTasks bool
 }
 
+type DraftPlanInput struct {
+	Name        string
+	Description string
+	ParentID    string
+	GoalText    string
+	HorizonDays int
+	ListID      string
+	Source      string
+	MaxTasks    int
+}
+
+type DraftPlanResult struct {
+	Project *project.Project
+	Plan    *project.PlanSuggestion
+}
+
 func (s *Service) CreateProject(ctx context.Context, in CreateInput) (*project.Project, error) {
 	goalText := strings.TrimSpace(in.GoalText)
 	if goalText == "" {
@@ -75,6 +91,31 @@ func (s *Service) CreateProject(ctx context.Context, in CreateInput) (*project.P
 	return item, nil
 }
 
+func (s *Service) CreateProjectDraftPlan(ctx context.Context, in DraftPlanInput) (*DraftPlanResult, error) {
+	item, err := s.CreateProject(ctx, CreateInput{
+		Name:        in.Name,
+		Description: in.Description,
+		ParentID:    in.ParentID,
+		GoalText:    in.GoalText,
+		HorizonDays: in.HorizonDays,
+		ListID:      in.ListID,
+		Source:      in.Source,
+	})
+	if err != nil {
+		return nil, err
+	}
+	plan, err := s.savePlanForProject(ctx, item, SplitInput{
+		ProjectID:   item.ID,
+		GoalText:    item.GoalText,
+		HorizonDays: item.HorizonDays,
+		MaxTasks:    in.MaxTasks,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &DraftPlanResult{Project: item, Plan: plan}, nil
+}
+
 func (s *Service) ListProjects(ctx context.Context, status string) ([]project.Project, error) {
 	return s.ProjectStore.ListProjects(ctx, strings.TrimSpace(status))
 }
@@ -84,6 +125,23 @@ func (s *Service) SplitProject(ctx context.Context, in SplitInput) (map[string]i
 	if err != nil {
 		return nil, err
 	}
+	suggestion, err := s.savePlanForProject(ctx, item, in)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"project_id":    item.ID,
+		"plan_id":       suggestion.PlanID,
+		"status":        suggestion.Status,
+		"confidence":    suggestion.Confidence,
+		"constraints":   suggestion.Constraints,
+		"tasks_preview": suggestion.TasksPreview,
+		"phases":        suggestion.Phases,
+		"warnings":      suggestion.Warnings,
+	}, nil
+}
+
+func (s *Service) savePlanForProject(ctx context.Context, item *project.Project, in SplitInput) (*project.PlanSuggestion, error) {
 	goalText := strings.TrimSpace(in.GoalText)
 	if goalText == "" {
 		goalText = item.GoalText
@@ -117,16 +175,7 @@ func (s *Service) SplitProject(ctx context.Context, in SplitInput) (map[string]i
 	if err := s.ProjectStore.SaveProject(ctx, item); err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{
-		"project_id":    item.ID,
-		"plan_id":       suggestion.PlanID,
-		"status":        suggestion.Status,
-		"confidence":    suggestion.Confidence,
-		"constraints":   suggestion.Constraints,
-		"tasks_preview": suggestion.TasksPreview,
-		"phases":        suggestion.Phases,
-		"warnings":      suggestion.Warnings,
-	}, nil
+	return suggestion, nil
 }
 
 func (s *Service) ConfirmProject(ctx context.Context, in ConfirmInput) (map[string]interface{}, error) {

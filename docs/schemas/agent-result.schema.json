@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskbridge.local/schemas/agent-result.schema.json",
+  "title": "TaskBridge Agent Result",
+  "type": "object",
+  "required": ["schema", "status", "request_id", "dry_run", "requires_confirmation", "warnings", "errors"],
+  "properties": {
+    "schema": {
+      "const": "taskbridge.agent-result.v1"
+    },
+    "status": {
+      "enum": ["ok", "error"]
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dry_run": {
+      "type": "boolean"
+    },
+    "requires_confirmation": {
+      "type": "boolean"
+    },
+    "result": true,
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "next_action": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

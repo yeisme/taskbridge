@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskbridge.local/schemas/today.schema.json",
+  "title": "TaskBridge Today",
+  "type": "object",
+  "required": ["schema", "date", "status", "summary", "sections", "warnings"],
+  "properties": {
+    "schema": {
+      "const": "taskbridge.today.v1"
+    },
+    "date": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "tasks"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "tasks": {
+            "type": "array"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "project_next": {
+      "type": "array"
+    },
+    "suggested_actions": {
+      "type": "array"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true
+}
