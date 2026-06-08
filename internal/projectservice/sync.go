@@ -66,10 +66,19 @@ func (s *SyncService) SyncProject(ctx context.Context, projectID string, p provi
 	item, err := s.ProjectStore.GetProject(ctx, projectID)
 	if err == nil {
 		item.Status = project.StatusSynced
-		_ = s.ProjectStore.SaveProject(ctx, item)
-		result.Status = string(project.StatusSynced)
+		if err := s.ProjectStore.SaveProject(ctx, item); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("save project status: %v", err))
+		} else {
+			result.Status = string(project.StatusSynced)
+		}
+	} else {
+		result.Errors = append(result.Errors, fmt.Sprintf("reload project: %v", err))
 	}
-	result.Message = fmt.Sprintf("项目已同步到 %s", providerName)
+	if len(result.Errors) > 0 {
+		result.Message = fmt.Sprintf("项目同步到 %s，但存在本地保存错误", providerName)
+	} else {
+		result.Message = fmt.Sprintf("项目已同步到 %s", providerName)
+	}
 	return result, nil
 }
 

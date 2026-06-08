@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/yeisme/taskbridge/internal/model"
+	"github.com/yeisme/taskbridge/pkg/output"
 )
 
 var (
@@ -149,10 +150,10 @@ func runTaskAdd(cmd *cobra.Command, args []string) error {
 
 	// 创建存储
 	store, cleanup, err := getStore()
-	defer cleanup()
 	if err != nil {
 		return commandError("创建存储失败", err)
 	}
+	defer cleanup()
 
 	// 创建任务
 	task := &model.Task{
@@ -198,10 +199,10 @@ func runTaskEdit(cmd *cobra.Command, args []string) error {
 
 	// 创建存储
 	store, cleanup, err := getStore()
-	defer cleanup()
 	if err != nil {
 		return commandError("创建存储失败", err)
 	}
+	defer cleanup()
 
 	// 获取任务
 	task, err := store.GetTask(ctx, taskID)
@@ -249,10 +250,10 @@ func runTaskDelete(cmd *cobra.Command, args []string) error {
 
 	// 创建存储
 	store, cleanup, err := getStore()
-	defer cleanup()
 	if err != nil {
 		return commandError("创建存储失败", err)
 	}
+	defer cleanup()
 
 	// 检查任务是否存在
 	task, err := store.GetTask(ctx, taskID)
@@ -294,10 +295,10 @@ func runTaskDone(cmd *cobra.Command, args []string) error {
 
 	// 创建存储
 	store, cleanup, err := getStore()
-	defer cleanup()
 	if err != nil {
 		return commandError("创建存储失败", err)
 	}
+	defer cleanup()
 
 	// 获取任务
 	task, err := store.GetTask(ctx, taskID)
@@ -330,10 +331,10 @@ func runTaskUndo(cmd *cobra.Command, args []string) error {
 
 	// 创建存储
 	store, cleanup, err := getStore()
-	defer cleanup()
 	if err != nil {
 		return commandError("创建存储失败", err)
 	}
+	defer cleanup()
 
 	// 获取任务
 	task, err := store.GetTask(ctx, taskID)
@@ -365,10 +366,10 @@ func runTaskShow(cmd *cobra.Command, args []string) error {
 
 	// 创建存储
 	store, cleanup, err := getStore()
-	defer cleanup()
 	if err != nil {
 		return commandError("创建存储失败", err)
 	}
+	defer cleanup()
 
 	// 获取任务
 	task, err := store.GetTask(ctx, taskID)
@@ -388,7 +389,7 @@ func runTaskShow(cmd *cobra.Command, args []string) error {
 	fmt.Println("   ─────────────────────────────────")
 	fmt.Printf("   ID:       %s\n", task.ID)
 	fmt.Printf("   标题:     %s\n", task.Title)
-	fmt.Printf("   状态:     %s\n", statusShort(task.Status))
+	fmt.Printf("   状态:     %s\n", output.StatusShort(task.Status))
 	fmt.Printf("   优先级:   %s\n", task.Priority.String())
 	fmt.Printf("   象限:     %s\n", task.Quadrant.String())
 

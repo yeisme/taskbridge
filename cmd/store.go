@@ -10,7 +10,7 @@ import (
 func getStore() (storage.Storage, func(), error) {
 	fs, err := filestore.New(cfg.Storage.Path, cfg.Storage.File.Format)
 	if err != nil {
-		return nil, nil, err
+		return nil, func() {}, err
 	}
 
 	var store storage.Storage = fs

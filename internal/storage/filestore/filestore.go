@@ -7,12 +7,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/yeisme/taskbridge/internal/filter"
 	"github.com/yeisme/taskbridge/internal/model"
 	"github.com/yeisme/taskbridge/internal/persistence"
 	"github.com/yeisme/taskbridge/internal/storage"
@@ -192,11 +190,15 @@ func (fs *FileStorage) save() error {
 
 // SaveTask 保存任务
 func (fs *FileStorage) SaveTask(_ context.Context, task *model.Task) error {
+	if task == nil {
+		return fmt.Errorf("task is nil")
+	}
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
-	task.UpdatedAt = time.Now()
-	fs.tasks[task.ID] = task
+	stored := model.CloneTask(task)
+	stored.UpdatedAt = time.Now()
+	fs.tasks[stored.ID] = stored
 	fs.dirty = true
 
 	return nil
@@ -211,7 +213,7 @@ func (fs *FileStorage) GetTask(_ context.Context, id string) (*model.Task, error
 	if !ok {
 		return nil, fmt.Errorf("task not found: %s", id)
 	}
-	return task, nil
+	return model.CloneTask(task), nil
 }
 
 // ListTasks 列出任务
@@ -228,7 +230,7 @@ func (fs *FileStorage) ListTasks(_ context.Context, opts storage.ListOptions) ([
 		if opts.ListID != "" && task.ListID != opts.ListID {
 			continue
 		}
-		result = append(result, *task)
+		result = append(result, *model.CloneTask(task))
 	}
 
 	return result, nil
@@ -251,8 +253,12 @@ func (fs *FileStorage) SaveTasks(ctx context.Context, tasks []*model.Task) error
 
 	now := time.Now()
 	for _, task := range tasks {
-		task.UpdatedAt = now
-		fs.tasks[task.ID] = task
+		if task == nil {
+			continue
+		}
+		stored := model.CloneTask(task)
+		stored.UpdatedAt = now
+		fs.tasks[stored.ID] = stored
 	}
 
 	// SaveTasks: immediate write + clear dirty
@@ -268,222 +274,20 @@ func (fs *FileStorage) QueryTasks(ctx context.Context, query storage.Query) ([]m
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
-	var result []model.Task
-
-	for _, task := range fs.tasks {
-		if !fs.matchQuery(task, query) {
-			continue
-		}
-		result = append(result, *task)
-	}
-
-	// 排序
-	if query.OrderBy != "" {
-		fs.sortTasks(result, query.OrderBy, query.OrderDesc)
-	}
-
-	// 分页
-	if query.Offset > 0 || query.Limit > 0 {
-		start := query.Offset
-		if start > len(result) {
-			return []model.Task{}, nil
-		}
-		end := len(result)
-		if query.Limit > 0 && start+query.Limit < end {
-			end = start + query.Limit
-		}
-		result = result[start:end]
-	}
-
-	return result, nil
-}
-
-// matchQuery 检查任务是否匹配查询条件
-func (fs *FileStorage) matchQuery(task *model.Task, query storage.Query) bool {
-	// 任务 ID 过滤
-	if len(query.TaskIDs) > 0 && !containsString(query.TaskIDs, task.ID) {
-		return false
-	}
-
-	// 来源过滤
-	if len(query.Sources) > 0 {
-		found := false
-		for _, s := range query.Sources {
-			if task.Source == s {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-
-	// 列表 ID 过滤
-	if len(query.ListIDs) > 0 && !containsString(query.ListIDs, task.ListID) {
-		return false
-	}
-
-	// 列表名称过滤（规范化精确匹配）
-	if len(query.ListNames) > 0 {
-		matched := false
-		for _, name := range query.ListNames {
-			if filter.MatchListNameExactNormalized(name, task.ListName) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return false
-		}
-	}
-
-	// 状态过滤
-	if len(query.Statuses) > 0 {
-		found := false
-		for _, s := range query.Statuses {
-			if task.Status == s {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-
-	// 象限过滤
-	if len(query.Quadrants) > 0 {
-		found := false
-		for _, q := range query.Quadrants {
-			if task.Quadrant == q {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-
-	// 优先级过滤
-	if len(query.Priorities) > 0 {
-		found := false
-		for _, p := range query.Priorities {
-			if task.Priority == p {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-
-	// 标签过滤
-	if len(query.Tags) > 0 {
-		for _, tag := range query.Tags {
-			found := false
-			for _, t := range task.Tags {
-				if strings.EqualFold(t, tag) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return false
-			}
-		}
-	}
-
-	// 截止日期过滤
-	if query.DueBefore != nil && task.DueDate != nil {
-		if task.DueDate.After(*query.DueBefore) {
-			return false
-		}
-	}
-	if query.DueAfter != nil && task.DueDate != nil {
-		if task.DueDate.Before(*query.DueAfter) {
-			return false
-		}
-	}
-
-	// 文本搜索（兼容 FullText）
-	queryText := query.QueryText
-	if queryText == "" {
-		queryText = query.FullText
-	}
-	if queryText != "" && !filter.MatchQueryText(task, queryText) {
-		return false
-	}
-
-	return true
-}
-
-// sortTasks 排序任务
-func (fs *FileStorage) sortTasks(tasks []model.Task, orderBy string, orderDesc bool) {
-	sort.Slice(tasks, func(i, j int) bool {
-		a, b := tasks[i], tasks[j]
-		cmp := 0
-		switch orderBy {
-		case "due_date":
-			cmp = compareTimePtr(a.DueDate, b.DueDate)
-		case "priority":
-			cmp = int(a.Priority) - int(b.Priority)
-		case "created_at":
-			cmp = compareTime(a.CreatedAt, b.CreatedAt)
-		case "updated_at":
-			cmp = compareTime(a.UpdatedAt, b.UpdatedAt)
-		default:
-			cmp = compareTime(a.UpdatedAt, b.UpdatedAt)
-		}
-
-		if orderDesc {
-			return cmp > 0
-		}
-		return cmp < 0
-	})
-}
-
-func compareTimePtr(a, b *time.Time) int {
-	switch {
-	case a == nil && b == nil:
-		return 0
-	case a == nil:
-		return 1
-	case b == nil:
-		return -1
-	default:
-		return compareTime(*a, *b)
-	}
-}
-
-func compareTime(a, b time.Time) int {
-	if a.Before(b) {
-		return -1
-	}
-	if a.After(b) {
-		return 1
-	}
-	return 0
-}
-
-func containsString(values []string, target string) bool {
-	for _, v := range values {
-		if strings.EqualFold(strings.TrimSpace(v), strings.TrimSpace(target)) {
-			return true
-		}
-	}
-	return false
+	return queryTasksFromMap(fs.tasks, query), nil
 }
 
 // SaveTaskList 保存任务列表
 func (fs *FileStorage) SaveTaskList(ctx context.Context, list *model.TaskList) error {
+	if list == nil {
+		return fmt.Errorf("task list is nil")
+	}
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
-	list.UpdatedAt = time.Now()
-	fs.taskLists[list.ID] = list
+	stored := model.CloneTaskList(list)
+	stored.UpdatedAt = time.Now()
+	fs.taskLists[stored.ID] = stored
 	fs.dirty = true
 
 	return nil
@@ -498,7 +302,7 @@ func (fs *FileStorage) GetTaskList(ctx context.Context, id string) (*model.TaskL
 	if !ok {
 		return nil, fmt.Errorf("task list not found: %s", id)
 	}
-	return list, nil
+	return model.CloneTaskList(list), nil
 }
 
 // ListTaskLists 列出任务列表
@@ -508,7 +312,7 @@ func (fs *FileStorage) ListTaskLists(ctx context.Context) ([]model.TaskList, err
 
 	var result []model.TaskList
 	for _, list := range fs.taskLists {
-		result = append(result, *list)
+		result = append(result, *model.CloneTaskList(list))
 	}
 	return result, nil
 }

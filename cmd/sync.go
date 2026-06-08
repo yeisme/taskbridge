@@ -137,10 +137,10 @@ func getSyncEngineForProvider(providerName string) (*sync.Engine, error) {
 
 	// 创建存储
 	store, cleanup, err := getStore()
-	defer cleanup()
 	if err != nil {
 		return nil, fmt.Errorf("创建存储失败: %w", err)
 	}
+	defer cleanup()
 
 	providers, err := loadAuthenticatedProviders(providerName)
 	if err != nil {
@@ -267,8 +267,7 @@ func runSyncStatus(cmd *cobra.Command, args []string) error {
 		printSyncStatus(status)
 	} else {
 		// 查询所有 Provider
-		providers := []string{"google", "microsoft", "feishu", "ticktick", "dida", "todoist"}
-		for _, p := range providers {
+		for _, p := range provider.GetAllProviderNames() {
 			status, err := engine.GetStatus(context.Background(), p)
 			if err != nil {
 				continue

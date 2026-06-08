@@ -309,16 +309,24 @@ func defaultLimit(value, fallback int) int {
 	return fallback
 }
 
-func DemoTasks(now time.Time) []model.Task {
+func ptrTime(t time.Time) *time.Time { return &t }
+
+// MockTasks generates a set of mock tasks covering all quadrants, statuses, and sources.
+// Used by --mock flag on today/next/inbox commands for demo and testing.
+func MockTasks(now time.Time) []model.Task {
 	if now.IsZero() {
 		now = time.Now()
 	}
 	return []model.Task{
-		{ID: "demo_today", Title: "完成 TaskBridge 今日工作台设计", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityHigh, DueDate: ptrTime(dayStart(now).Add(17 * time.Hour)), CreatedAt: now.Add(-48 * time.Hour), UpdatedAt: now.Add(-2 * time.Hour), EstimatedMinutes: 90},
-		{ID: "demo_overdue", Title: "整理逾期任务并决定去留", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityMedium, DueDate: ptrTime(dayStart(now).AddDate(0, 0, -2)), CreatedAt: now.AddDate(0, 0, -7), UpdatedAt: now.AddDate(0, 0, -2), EstimatedMinutes: 45},
-		{ID: "demo_large", Title: "把 Agent 安全执行层拆成可交付任务", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityHigh, CreatedAt: now.AddDate(0, 0, -1), UpdatedAt: now.Add(-3 * time.Hour), EstimatedMinutes: 240},
-		{ID: "demo_inbox", Title: "确认 Todoist 同步策略", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityLow, CreatedAt: now.AddDate(0, 0, -1), UpdatedAt: now.AddDate(0, 0, -1)},
+		{ID: "mock_today", Title: "完成 TaskBridge 今日工作台设计", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityHigh, DueDate: ptrTime(dayStart(now).Add(17 * time.Hour)), CreatedAt: now.Add(-48 * time.Hour), UpdatedAt: now.Add(-2 * time.Hour), EstimatedMinutes: 90},
+		{ID: "mock_overdue", Title: "整理逾期任务并决定去留", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityMedium, DueDate: ptrTime(dayStart(now).AddDate(0, 0, -2)), CreatedAt: now.AddDate(0, 0, -7), UpdatedAt: now.AddDate(0, 0, -2), EstimatedMinutes: 45},
+		{ID: "mock_large", Title: "把 Agent 安全执行层拆成可交付任务", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityHigh, CreatedAt: now.AddDate(0, 0, -1), UpdatedAt: now.Add(-3 * time.Hour), EstimatedMinutes: 240},
+		{ID: "mock_inbox", Title: "确认 Todoist 同步策略", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityLow, CreatedAt: now.AddDate(0, 0, -1), UpdatedAt: now.AddDate(0, 0, -1)},
+		{ID: "mock_q2_plan", Title: "制定 Q3 产品路线图", Status: model.StatusTodo, Source: "todoist", Priority: model.PriorityMedium, DueDate: ptrTime(dayStart(now).AddDate(0, 0, 14)), CreatedAt: now.AddDate(0, 0, -3), UpdatedAt: now.Add(-24 * time.Hour), EstimatedMinutes: 120},
+		{ID: "mock_q2_health", Title: "每周复盘：评估团队工作负载", Status: model.StatusInProgress, Source: model.SourceLocal, Priority: model.PriorityMedium, DueDate: ptrTime(dayStart(now).AddDate(0, 0, 2)), CreatedAt: now.AddDate(0, 0, -5), UpdatedAt: now.Add(-4 * time.Hour), EstimatedMinutes: 60},
+		{ID: "mock_q3_reply", Title: "回复客户技术咨询邮件", Status: model.StatusTodo, Source: "google", Priority: model.PriorityLow, DueDate: ptrTime(dayStart(now).Add(12 * time.Hour)), CreatedAt: now.Add(-6 * time.Hour), UpdatedAt: now.Add(-1 * time.Hour), EstimatedMinutes: 30},
+		{ID: "mock_q3_meeting", Title: "准备周会汇报材料", Status: model.StatusTodo, Source: "microsoft", Priority: model.PriorityMedium, DueDate: ptrTime(dayStart(now).AddDate(0, 0, 1).Add(10 * time.Hour)), CreatedAt: now.AddDate(0, 0, -2), UpdatedAt: now.Add(-12 * time.Hour), EstimatedMinutes: 45},
+		{ID: "mock_q4_cleanup", Title: "清理过期的测试数据", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityLow, CreatedAt: now.AddDate(0, 0, -10), UpdatedAt: now.AddDate(0, 0, -10), EstimatedMinutes: 20},
+		{ID: "mock_completed", Title: "完成用户认证模块重构", Status: model.StatusCompleted, Source: model.SourceLocal, Priority: model.PriorityHigh, DueDate: ptrTime(dayStart(now).AddDate(0, 0, -1).Add(18 * time.Hour)), CreatedAt: now.AddDate(0, 0, -14), UpdatedAt: now.AddDate(0, 0, -1), EstimatedMinutes: 180},
 	}
 }
-
-func ptrTime(t time.Time) *time.Time { return &t }

@@ -77,10 +77,10 @@ func init() {
 
 func runSyncDiff(_ *cobra.Command, args []string) error {
 	taskStore, cleanup, err := getStore()
-	defer cleanup()
 	if err != nil {
 		return commandError("初始化存储失败", err)
 	}
+	defer cleanup()
 	store := syncaudit.Store{BasePath: cfg.Storage.Path}
 	session, err := store.Diff(context.Background(), taskStore, args[0], syncTarget)
 	if err != nil {

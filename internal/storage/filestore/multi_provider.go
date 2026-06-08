@@ -7,14 +7,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/yeisme/taskbridge/internal/filter"
 	"github.com/yeisme/taskbridge/internal/model"
 	"github.com/yeisme/taskbridge/internal/persistence"
+	"github.com/yeisme/taskbridge/internal/provider"
 	"github.com/yeisme/taskbridge/internal/storage"
 )
 
@@ -325,8 +324,7 @@ func (mps *MultiProviderStorage) ListTasks(ctx context.Context, opts storage.Lis
 
 	// 汇总所有 Provider 的任务
 	var result []model.Task
-	providers := []string{"google", "microsoft", "feishu", "ticktick", "dida", "todoist"}
-	for _, p := range providers {
+	for _, p := range provider.GetAllProviderNames() {
 		ps, err := mps.GetProviderStorage(p)
 		if err != nil {
 			continue
@@ -385,7 +383,7 @@ func (mps *MultiProviderStorage) SaveTasks(ctx context.Context, tasks []*model.T
 func (mps *MultiProviderStorage) QueryTasks(ctx context.Context, query storage.Query) ([]model.Task, error) {
 	var result []model.Task
 
-	providers := []string{"google", "microsoft", "feishu", "ticktick", "dida", "todoist"}
+	providers := provider.GetAllProviderNames()
 	if len(query.Sources) > 0 {
 		providers = make([]string, len(query.Sources))
 		for i, s := range query.Sources {
@@ -416,19 +414,7 @@ func (mps *MultiProviderStorage) QueryTasks(ctx context.Context, query storage.Q
 		sortTasks(result, query.OrderBy, query.OrderDesc)
 	}
 
-	if query.Offset > 0 || query.Limit > 0 {
-		start := query.Offset
-		if start > len(result) {
-			return []model.Task{}, nil
-		}
-		end := len(result)
-		if query.Limit > 0 && start+query.Limit < end {
-			end = start + query.Limit
-		}
-		result = result[start:end]
-	}
-
-	return result, nil
+	return applyPagination(result, query.Offset, query.Limit), nil
 }
 
 // SaveTaskList 保存任务列表
@@ -442,8 +428,7 @@ func (mps *MultiProviderStorage) SaveTaskList(ctx context.Context, list *model.T
 
 // GetTaskList 获取任务列表
 func (mps *MultiProviderStorage) GetTaskList(ctx context.Context, id string) (*model.TaskList, error) {
-	providers := []string{"google", "microsoft", "feishu", "ticktick", "dida", "todoist"}
-	for _, p := range providers {
+	for _, p := range provider.GetAllProviderNames() {
 		ps, err := mps.GetProviderStorage(p)
 		if err != nil {
 			continue
@@ -459,8 +444,7 @@ func (mps *MultiProviderStorage) GetTaskList(ctx context.Context, id string) (*m
 // ListTaskLists 列出任务列表
 func (mps *MultiProviderStorage) ListTaskLists(ctx context.Context) ([]model.TaskList, error) {
 	var result []model.TaskList
-	providers := []string{"google", "microsoft", "feishu", "ticktick", "dida", "todoist"}
-	for _, p := range providers {
+	for _, p := range provider.GetAllProviderNames() {
 		ps, err := mps.GetProviderStorage(p)
 		if err != nil {
 			continue
@@ -476,8 +460,7 @@ func (mps *MultiProviderStorage) ListTaskLists(ctx context.Context) ([]model.Tas
 
 // DeleteTaskList 删除任务列表
 func (mps *MultiProviderStorage) DeleteTaskList(ctx context.Context, id string) error {
-	providers := []string{"google", "microsoft", "feishu", "ticktick", "dida", "todoist"}
-	for _, p := range providers {
+	for _, p := range provider.GetAllProviderNames() {
 		ps, err := mps.GetProviderStorage(p)
 		if err != nil {
 			continue
@@ -673,11 +656,15 @@ func (ps *ProviderStorage) save() error {
 
 // SaveTask 保存任务
 func (ps *ProviderStorage) SaveTask(_ context.Context, task *model.Task) error {
+	if task == nil {
+		return fmt.Errorf("task is nil")
+	}
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	task.UpdatedAt = time.Now()
-	ps.tasks[task.ID] = task
+	stored := model.CloneTask(task)
+	stored.UpdatedAt = time.Now()
+	ps.tasks[stored.ID] = stored
 	ps.dirty = true
 
 	return nil
@@ -692,7 +679,7 @@ func (ps *ProviderStorage) GetTask(_ context.Context, id string) (*model.Task, e
 	if !ok {
 		return nil, fmt.Errorf("task not found: %s", id)
 	}
-	return task, nil
+	return model.CloneTask(task), nil
 }
 
 // ListTasks 列出任务
@@ -705,7 +692,7 @@ func (ps *ProviderStorage) ListTasks(_ context.Context, opts storage.ListOptions
 		if opts.ListID != "" && task.ListID != opts.ListID {
 			continue
 		}
-		result = append(result, *task)
+		result = append(result, *model.CloneTask(task))
 	}
 	return result, nil
 }
@@ -727,8 +714,12 @@ func (ps *ProviderStorage) SaveTasks(_ context.Context, tasks []*model.Task) err
 
 	now := time.Now()
 	for _, task := range tasks {
-		task.UpdatedAt = now
-		ps.tasks[task.ID] = task
+		if task == nil {
+			continue
+		}
+		stored := model.CloneTask(task)
+		stored.UpdatedAt = now
+		ps.tasks[stored.ID] = stored
 	}
 
 	// SaveTasks: immediate write + clear dirty
@@ -744,225 +735,20 @@ func (ps *ProviderStorage) QueryTasks(_ context.Context, query storage.Query) ([
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 
-	queryText := normalizedQueryText(query)
-
-	var result []model.Task
-	for _, task := range ps.tasks {
-		if !taskMatchesQuery(task, query, queryText) {
-			continue
-		}
-
-		result = append(result, *task)
-	}
-
-	if query.OrderBy != "" {
-		sortTasks(result, query.OrderBy, query.OrderDesc)
-	}
-	if query.Offset > 0 || query.Limit > 0 {
-		start := query.Offset
-		if start > len(result) {
-			return []model.Task{}, nil
-		}
-		end := len(result)
-		if query.Limit > 0 && start+query.Limit < end {
-			end = start + query.Limit
-		}
-		result = result[start:end]
-	}
-
-	return result, nil
-}
-
-func normalizedQueryText(query storage.Query) string {
-	if query.QueryText != "" {
-		return query.QueryText
-	}
-	return query.FullText
-}
-
-func taskMatchesQuery(task *model.Task, query storage.Query, queryText string) bool {
-	return matchTaskID(query.TaskIDs, task.ID) &&
-		matchSource(query.Sources, task.Source) &&
-		matchListID(query.ListIDs, task.ListID) &&
-		matchListName(query.ListNames, task.ListName) &&
-		matchStatus(query.Statuses, task.Status) &&
-		matchQuadrant(query.Quadrants, task.Quadrant) &&
-		matchPriority(query.Priorities, task.Priority) &&
-		matchTags(query.Tags, task.Tags) &&
-		matchDueDate(query.DueBefore, query.DueAfter, task.DueDate) &&
-		matchQueryText(queryText, task)
-}
-
-func matchTaskID(ids []string, taskID string) bool {
-	return len(ids) == 0 || containsStringCI(ids, taskID)
-}
-
-func matchSource(sources []model.TaskSource, source model.TaskSource) bool {
-	if len(sources) == 0 {
-		return true
-	}
-	for _, s := range sources {
-		if source == s {
-			return true
-		}
-	}
-	return false
-}
-
-func matchListID(ids []string, listID string) bool {
-	return len(ids) == 0 || containsStringCI(ids, listID)
-}
-
-func matchListName(listNames []string, listName string) bool {
-	if len(listNames) == 0 {
-		return true
-	}
-	for _, name := range listNames {
-		if filter.MatchListNameExactNormalized(name, listName) {
-			return true
-		}
-	}
-	return false
-}
-
-func matchStatus(statuses []model.TaskStatus, status model.TaskStatus) bool {
-	if len(statuses) == 0 {
-		return true
-	}
-	for _, s := range statuses {
-		if status == s {
-			return true
-		}
-	}
-	return false
-}
-
-func matchQuadrant(quadrants []model.Quadrant, quadrant model.Quadrant) bool {
-	if len(quadrants) == 0 {
-		return true
-	}
-	for _, q := range quadrants {
-		if quadrant == q {
-			return true
-		}
-	}
-	return false
-}
-
-func matchPriority(priorities []model.Priority, priority model.Priority) bool {
-	if len(priorities) == 0 {
-		return true
-	}
-	for _, p := range priorities {
-		if priority == p {
-			return true
-		}
-	}
-	return false
-}
-
-func matchTags(queryTags []string, taskTags []string) bool {
-	if len(queryTags) == 0 {
-		return true
-	}
-	for _, tag := range queryTags {
-		found := false
-		for _, taskTag := range taskTags {
-			if strings.EqualFold(strings.TrimSpace(tag), strings.TrimSpace(taskTag)) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
-}
-
-func matchDueDate(dueBefore, dueAfter, dueDate *time.Time) bool {
-	if dueBefore != nil && dueDate != nil && dueDate.After(*dueBefore) {
-		return false
-	}
-	if dueAfter != nil && dueDate != nil && dueDate.Before(*dueAfter) {
-		return false
-	}
-	return true
-}
-
-func matchQueryText(queryText string, task *model.Task) bool {
-	if queryText == "" {
-		return true
-	}
-	return filter.MatchQueryText(task, queryText)
-}
-
-func sortTasks(tasks []model.Task, orderBy string, orderDesc bool) {
-	sort.Slice(tasks, func(i, j int) bool {
-		a, b := tasks[i], tasks[j]
-		cmp := compareTaskByOrder(a, b, orderBy)
-		if orderDesc {
-			return cmp > 0
-		}
-		return cmp < 0
-	})
-}
-
-func compareTaskByOrder(a, b model.Task, orderBy string) int {
-	switch orderBy {
-	case "due_date":
-		return compareTimePointers(a.DueDate, b.DueDate)
-	case "priority":
-		return int(a.Priority) - int(b.Priority)
-	case "created_at":
-		return compareTimes(a.CreatedAt, b.CreatedAt)
-	case "updated_at":
-		return compareTimes(a.UpdatedAt, b.UpdatedAt)
-	default:
-		return compareTimes(a.UpdatedAt, b.UpdatedAt)
-	}
-}
-
-func compareTimePointers(a, b *time.Time) int {
-	switch {
-	case a == nil && b == nil:
-		return 0
-	case a == nil:
-		return 1
-	case b == nil:
-		return -1
-	default:
-		return compareTimes(*a, *b)
-	}
-}
-
-func compareTimes(a, b time.Time) int {
-	if a.Before(b) {
-		return -1
-	}
-	if a.After(b) {
-		return 1
-	}
-	return 0
-}
-
-func containsStringCI(values []string, target string) bool {
-	target = strings.TrimSpace(target)
-	for _, v := range values {
-		if strings.EqualFold(strings.TrimSpace(v), target) {
-			return true
-		}
-	}
-	return false
+	return queryTasksFromMap(ps.tasks, query), nil
 }
 
 // SaveTaskList 保存任务列表
 func (ps *ProviderStorage) SaveTaskList(_ context.Context, list *model.TaskList) error {
+	if list == nil {
+		return fmt.Errorf("task list is nil")
+	}
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	list.UpdatedAt = time.Now()
-	ps.taskLists[list.ID] = list
+	stored := model.CloneTaskList(list)
+	stored.UpdatedAt = time.Now()
+	ps.taskLists[stored.ID] = stored
 	ps.dirty = true
 
 	return nil
@@ -977,7 +763,7 @@ func (ps *ProviderStorage) GetTaskList(_ context.Context, id string) (*model.Tas
 	if !ok {
 		return nil, fmt.Errorf("task list not found: %s", id)
 	}
-	return list, nil
+	return model.CloneTaskList(list), nil
 }
 
 // ListTaskLists 列出任务列表
@@ -987,7 +773,7 @@ func (ps *ProviderStorage) ListTaskLists(_ context.Context) ([]model.TaskList, e
 
 	var result []model.TaskList
 	for _, list := range ps.taskLists {
-		result = append(result, *list)
+		result = append(result, *model.CloneTaskList(list))
 	}
 	return result, nil
 }

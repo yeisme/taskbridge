@@ -715,9 +715,9 @@ func (c *Client) ListSubtasks(ctx context.Context, taskID string) ([]Subtask, er
 	result := make([]Subtask, 0, len(subtasks))
 	for _, t := range subtasks {
 		item := Subtask{
-			SubtaskID:    t.TaskID,
-			Title:        t.Title,
-			IsCompleted:  t.Status == StatusDone,
+			SubtaskID:     t.TaskID,
+			Title:         t.Title,
+			IsCompleted:   t.Status == StatusDone,
 			CompletedTime: t.CompletedTime,
 			CreatedTime:   t.CreatedTime,
 			CreatorID:     t.CreatorID,

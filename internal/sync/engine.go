@@ -153,7 +153,14 @@ func (e *Engine) pull(ctx context.Context, p provider.Provider, result *Result, 
 			log.Info().Str("list", list.Name).Msg("[DryRun] 将拉取任务列表")
 			continue
 		}
-		_ = e.storage.SaveTaskList(ctx, &list)
+		if err := e.storage.SaveTaskList(ctx, &list); err != nil {
+			result.Errors = append(result.Errors, Error{
+				TaskID:    list.ID,
+				Operation: "save_task_list",
+				Error:     err.Error(),
+			})
+			continue
+		}
 	}
 
 	// 获取本地该 Provider 的所有任务，用于匹配 local_id 和清理幽灵任务
@@ -284,11 +291,21 @@ func (e *Engine) pull(ctx context.Context, p provider.Provider, result *Result, 
 	}
 
 	// 更新同步时间
-	_ = e.storage.SetLastSyncTime(ctx, source, time.Now())
+	if err := e.storage.SetLastSyncTime(ctx, source, time.Now()); err != nil {
+		result.Errors = append(result.Errors, Error{
+			Operation: "set_last_sync_time",
+			Error:     err.Error(),
+		})
+	}
 
 	// Flush pending writes
 	if f, ok := e.storage.(storage.Flushable); ok {
-		_ = f.Flush()
+		if err := f.Flush(); err != nil {
+			result.Errors = append(result.Errors, Error{
+				Operation: "flush",
+				Error:     err.Error(),
+			})
+		}
 	}
 
 	log.Info().Int("pulled", result.Pulled).Msg("拉取完成")
@@ -439,7 +456,12 @@ func (e *Engine) push(ctx context.Context, p provider.Provider, result *Result, 
 
 	// Flush pending writes
 	if f, ok := e.storage.(storage.Flushable); ok {
-		_ = f.Flush()
+		if err := f.Flush(); err != nil {
+			result.Errors = append(result.Errors, Error{
+				Operation: "flush",
+				Error:     err.Error(),
+			})
+		}
 	}
 
 	log.Info().Int("pushed", result.Pushed).Int("updated", result.Updated).Int("deleted", result.Deleted).Msg("推送完成")
@@ -530,7 +552,14 @@ func (e *Engine) pushLocalTasks(ctx context.Context, p provider.Provider, tasks 
 		task.SourceRawID = createdTask.SourceRawID
 		task.ListID = listID
 		task.Source = source
-		_ = e.storage.SaveTask(ctx, &task)
+		if err := e.storage.SaveTask(ctx, &task); err != nil {
+			result.Errors = append(result.Errors, Error{
+				TaskID:    task.ID,
+				Operation: "save_task",
+				Error:     err.Error(),
+			})
+			continue
+		}
 		result.Pushed++
 	}
 }
@@ -593,7 +622,12 @@ func (e *Engine) bidirectional(ctx context.Context, p provider.Provider, result 
 
 	// Flush pending writes after bidirectional sync
 	if f, ok := e.storage.(storage.Flushable); ok {
-		_ = f.Flush()
+		if err := f.Flush(); err != nil {
+			result.Errors = append(result.Errors, Error{
+				Operation: "flush",
+				Error:     err.Error(),
+			})
+		}
 	}
 
 	log.Info().Msg("双向同步完成")

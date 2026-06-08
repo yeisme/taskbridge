@@ -93,10 +93,10 @@ func runAgentCapabilities(_ *cobra.Command, _ []string) error {
 func runAgentToday(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 	service, cleanup, err := controlService()
-	defer cleanup()
 	if err != nil {
 		return printAgent(agentcontract.Error(requestID(), "store_init_failed", err.Error(), "taskbridge doctor"))
 	}
+	defer cleanup()
 	result, err := service.Today(ctx, controlplane.Options{})
 	if err != nil {
 		return printAgent(agentcontract.Error(requestID(), "today_failed", err.Error(), "taskbridge today"))
@@ -156,10 +156,10 @@ func runAgentExecute(_ *cobra.Command, _ []string) error {
 		return printAgent(agentcontract.Error(requestID(), "action_file_invalid", err.Error(), "检查 action file"))
 	}
 	taskStore, _, cleanup, err := getCLIStores()
-	defer cleanup()
 	if err != nil {
 		return printAgent(agentcontract.Error(requestID(), "store_init_failed", err.Error(), "taskbridge doctor"))
 	}
+	defer cleanup()
 	effectiveDryRun := effectiveAgentExecuteDryRun(agentDryRun, agentConfirm)
 	result := actionfile.Executor{TaskStore: taskStore}.Execute(context.Background(), file, actionfile.ExecuteOptions{DryRun: effectiveDryRun, Confirm: agentConfirm})
 	envelope := agentcontract.OK(requestID(), effectiveDryRun, result)

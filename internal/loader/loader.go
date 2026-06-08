@@ -39,9 +39,6 @@ func WithTarget(name string) LoadOption {
 	return func(c *loadConfig) { c.target = name }
 }
 
-// allProviders lists every known provider name in canonical order.
-var allProviders = []string{"google", "microsoft", "todoist", "feishu", "ticktick", "dida"}
-
 // LoadProviders loads providers according to opts and returns both the
 // successfully loaded instances and per-provider status metadata.
 func LoadProviders(ctx context.Context, opts ...LoadOption) *ProviderLoadResult {
@@ -55,7 +52,7 @@ func LoadProviders(ctx context.Context, opts ...LoadOption) *ProviderLoadResult 
 		Statuses:  make(map[string]*ProviderLoadStatus),
 	}
 
-	targets := allProviders
+	targets := provider.GetAllProviderNames()
 	if cfg.target != "" {
 		resolved := provider.ResolveProviderName(cfg.target)
 		targets = []string{resolved}

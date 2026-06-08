@@ -75,10 +75,10 @@ func projectExecutionService() (*projectservice.ExecutionService, func(), error)
 
 func runProjectReview(_ *cobra.Command, args []string) error {
 	service, cleanup, err := projectExecutionService()
-	defer cleanup()
 	if err != nil {
 		return commandError("初始化项目服务失败", err)
 	}
+	defer cleanup()
 	result, err := service.Review(context.Background(), args[0])
 	if err != nil {
 		return commandError("项目复盘失败", err)
@@ -92,10 +92,10 @@ func runProjectReview(_ *cobra.Command, args []string) error {
 
 func runProjectNext(_ *cobra.Command, args []string) error {
 	service, cleanup, err := projectExecutionService()
-	defer cleanup()
 	if err != nil {
 		return commandError("初始化项目服务失败", err)
 	}
+	defer cleanup()
 	result, err := service.Next(context.Background(), args[0])
 	if err != nil {
 		return commandError("项目下一步失败", err)
@@ -107,10 +107,10 @@ func runProjectNext(_ *cobra.Command, args []string) error {
 
 func runProjectAdjust(_ *cobra.Command, args []string) error {
 	service, cleanup, err := projectExecutionService()
-	defer cleanup()
 	if err != nil {
 		return commandError("初始化项目服务失败", err)
 	}
+	defer cleanup()
 	actions, err := service.Adjust(context.Background(), args[0], projectAdjustReason)
 	if err != nil {
 		return commandError("生成项目调整失败", err)
@@ -132,10 +132,10 @@ func runProjectAdjust(_ *cobra.Command, args []string) error {
 
 func runProjectDone(_ *cobra.Command, args []string) error {
 	service, cleanup, err := projectExecutionService()
-	defer cleanup()
 	if err != nil {
 		return commandError("初始化项目服务失败", err)
 	}
+	defer cleanup()
 	result, err := service.Done(context.Background(), args[0])
 	if err != nil {
 		return commandError("标记项目完成失败", err)
@@ -147,10 +147,10 @@ func runProjectDone(_ *cobra.Command, args []string) error {
 
 func runProjectArchive(_ *cobra.Command, args []string) error {
 	service, cleanup, err := projectExecutionService()
-	defer cleanup()
 	if err != nil {
 		return commandError("初始化项目服务失败", err)
 	}
+	defer cleanup()
 	result, err := service.Archive(context.Background(), args[0])
 	if err != nil {
 		return commandError("归档项目失败", err)

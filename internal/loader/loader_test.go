@@ -3,6 +3,8 @@ package loader
 import (
 	"context"
 	"testing"
+
+	"github.com/yeisme/taskbridge/internal/provider"
 )
 
 // TestLoadProvidersResultStructure verifies that LoadProviders returns a
@@ -56,7 +58,7 @@ func TestLoadProvidersTargetFilter(t *testing.T) {
 // TestLoadProvidersAllProvidersCovered verifies that loading all providers
 // produces status entries for every known provider.
 func TestLoadProvidersAllProvidersCovered(t *testing.T) {
-	expectedProviders := []string{"google", "microsoft", "todoist", "feishu", "ticktick", "dida"}
+	expectedProviders := provider.GetAllProviderNames()
 
 	result := LoadProviders(context.Background())
 

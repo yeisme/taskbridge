@@ -111,10 +111,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 
 		store, cleanup, err := getStore()
-		defer cleanup()
 		if err != nil {
 			return commandError("初始化同步存储失败", err)
 		}
+		defer cleanup()
 
 		scheduler = syncengine.NewScheduler(syncengine.SchedulerConfig{
 			Interval:        syncInterval,

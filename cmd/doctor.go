@@ -1,21 +1,17 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/yeisme/taskbridge/internal/controlplane"
 	"github.com/yeisme/taskbridge/internal/project"
-	"github.com/yeisme/taskbridge/internal/storage/filestore"
 )
 
 var (
 	doctorFormat     string
-	demoFormat       string
 	quickstartFormat string
 )
 
@@ -23,17 +19,6 @@ var doctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "检查 TaskBridge 本地环境",
 	RunE:  runDoctor,
-}
-
-var demoCmd = &cobra.Command{
-	Use:   "demo",
-	Short: "运行内置示例",
-}
-
-var demoTodayCmd = &cobra.Command{
-	Use:   "today",
-	Short: "用示例数据展示每日任务工作台",
-	RunE:  runDemoToday,
 }
 
 var quickstartCmd = &cobra.Command{
@@ -44,12 +29,9 @@ var quickstartCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(doctorCmd)
-	rootCmd.AddCommand(demoCmd)
 	rootCmd.AddCommand(quickstartCmd)
-	demoCmd.AddCommand(demoTodayCmd)
 
 	doctorCmd.Flags().StringVarP(&doctorFormat, "format", "f", "text", "输出格式 (text, json)")
-	demoTodayCmd.Flags().StringVarP(&demoFormat, "format", "f", "text", "输出格式 (text, json)")
 	quickstartCmd.Flags().StringVarP(&quickstartFormat, "format", "f", "text", "输出格式 (text, json)")
 }
 
@@ -85,37 +67,6 @@ func runQuickstart(_ *cobra.Command, _ []string) error {
 		fmt.Println("建议下一步:")
 		fmt.Println(result.NextAction)
 	})
-}
-
-func runDemoToday(_ *cobra.Command, _ []string) error {
-	ctx := context.Background()
-	tmp, err := os.MkdirTemp("", "taskbridge-demo-*")
-	if err != nil {
-		return commandError("创建 demo 存储失败", err)
-	}
-	defer os.RemoveAll(tmp)
-
-	store, err := filestore.New(tmp, "json")
-	if err != nil {
-		return commandError("初始化 demo 存储失败", err)
-	}
-	current := time.Now()
-	for _, task := range controlplane.DemoTasks(current) {
-		t := task
-		if err := store.SaveTask(ctx, &t); err != nil {
-			return commandError("写入 demo 任务失败", err)
-		}
-	}
-	if err := store.Flush(); err != nil {
-		return commandError("刷新 demo 存储失败", err)
-	}
-
-	service := controlplane.Service{TaskStore: store}
-	result, err := service.Today(ctx, controlplane.Options{Now: current})
-	if err != nil {
-		return commandError("生成 demo today 失败", err)
-	}
-	return printTodayResult(demoFormat, result)
 }
 
 func buildDoctorResult() controlplane.DoctorResult {
@@ -162,14 +113,14 @@ func buildDoctorResult() controlplane.DoctorResult {
 		}
 	}
 	if authenticated == 0 {
-		add(controlplane.DoctorCheck{ID: "provider_auth", Status: "warning", Message: "no provider authenticated", NextAction: "taskbridge demo today"})
+		add(controlplane.DoctorCheck{ID: "provider_auth", Status: "warning", Message: "no provider authenticated", NextAction: "taskbridge today --mock"})
 	} else {
 		add(controlplane.DoctorCheck{ID: "provider_auth", Status: "ok", Message: fmt.Sprintf("%d provider(s) authenticated", authenticated)})
 	}
 
 	next := "taskbridge today"
 	if status != "ok" || authenticated == 0 {
-		next = "taskbridge demo today"
+		next = "taskbridge today --mock"
 	}
 	return controlplane.DoctorResult{Schema: controlplane.SchemaDoctor, Status: status, Checks: checks, NextAction: next}
 }

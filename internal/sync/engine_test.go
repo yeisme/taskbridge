@@ -4,6 +4,7 @@ package sync
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -464,6 +465,91 @@ func TestSyncPush(t *testing.T) {
 	if result.Pushed != 1 {
 		t.Errorf("Expected 1 pushed task, got %d", result.Pushed)
 	}
+}
+
+func TestSyncPushReportsLocalSaveFailureWithoutPushedCount(t *testing.T) {
+	mockProvider := &MockProvider{
+		name:          "mock",
+		authenticated: true,
+		taskLists: []model.TaskList{
+			{ID: "list1", Name: "我的任务", Source: "mock"},
+		},
+		tasks: make(map[string][]model.Task),
+	}
+
+	store := &failingSaveTaskStorage{
+		MockStorage: NewMockStorage(),
+		err:         errors.New("disk full"),
+	}
+	store.tasks["local1"] = &model.Task{
+		ID:        "local1",
+		Title:     "Local Task 1",
+		Status:    model.StatusTodo,
+		Source:    model.SourceLocal,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	engine := NewEngine(map[string]provider.Provider{"mock": mockProvider}, store)
+	result, err := engine.Sync(context.Background(), Options{Direction: DirectionPush, Provider: "mock"})
+	if err != nil {
+		t.Fatalf("Sync failed: %v", err)
+	}
+	if result.Pushed != 0 {
+		t.Fatalf("expected pushed=0 when local save fails, got %d", result.Pushed)
+	}
+	if !hasSyncError(result.Errors, "save_task") {
+		t.Fatalf("expected save_task error, got %+v", result.Errors)
+	}
+}
+
+func TestPushProjectLocalTasksReportsSaveFailureWithoutPushedCount(t *testing.T) {
+	mockProvider := &MockProvider{
+		name:          "mock",
+		authenticated: true,
+		tasks:         make(map[string][]model.Task),
+	}
+	store := &failingSaveTaskStorage{
+		MockStorage: NewMockStorage(),
+		err:         errors.New("disk full"),
+	}
+	result := &ProjectSyncResult{}
+
+	PushProjectLocalTasks(
+		context.Background(),
+		store,
+		mockProvider,
+		[]model.Task{{ID: "local1", Title: "Local Task 1", Source: model.SourceLocal}},
+		"list1",
+		model.TaskSource("mock"),
+		false,
+		result,
+	)
+
+	if result.Pushed != 0 {
+		t.Fatalf("expected pushed=0 when local save fails, got %d", result.Pushed)
+	}
+	if len(result.Errors) == 0 || !strings.Contains(result.Errors[0], "save") {
+		t.Fatalf("expected save error, got %+v", result.Errors)
+	}
+}
+
+type failingSaveTaskStorage struct {
+	*MockStorage
+	err error
+}
+
+func (s *failingSaveTaskStorage) SaveTask(context.Context, *model.Task) error {
+	return s.err
+}
+
+func hasSyncError(errors []Error, operation string) bool {
+	for _, err := range errors {
+		if err.Operation == operation {
+			return true
+		}
+	}
+	return false
 }
 
 // TestSyncBidirectional 测试双向同步

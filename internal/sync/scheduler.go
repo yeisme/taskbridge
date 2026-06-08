@@ -611,7 +611,9 @@ func (s *IncrementalSyncState) UpdateConfig(providerName string, config *Increme
 
 	// 持久化最后同步时间
 	if !config.LastSyncTime.IsZero() {
-		_ = s.storage.SetLastSyncTime(context.Background(), model.TaskSource(providerName), config.LastSyncTime)
+		if err := s.storage.SetLastSyncTime(context.Background(), model.TaskSource(providerName), config.LastSyncTime); err != nil {
+			log.Error().Err(err).Str("provider", providerName).Msg("持久化增量同步时间失败")
+		}
 	}
 }
 

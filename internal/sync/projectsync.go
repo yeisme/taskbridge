@@ -103,7 +103,10 @@ func PushProjectLocalTasks(ctx context.Context, taskStore storage.Storage, p pro
 			task.SourceRawID = createdTask.SourceRawID
 			task.ListID = listID
 			task.Source = source
-			_ = taskStore.SaveTask(ctx, &task)
+			if err := taskStore.SaveTask(ctx, &task); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("save %s: %v", task.ID, err))
+				continue
+			}
 			remoteByLocalID[task.ID] = task.SourceRawID
 		} else if task.SourceRawID != "" {
 			remoteByLocalID[task.ID] = task.SourceRawID
@@ -118,10 +121,12 @@ func PullProviderTasksIntoLocal(ctx context.Context, taskStore storage.Storage, 
 		return err
 	}
 	for _, list := range taskLists {
-		_ = taskStore.SaveTaskList(ctx, &list)
+		if err := taskStore.SaveTaskList(ctx, &list); err != nil {
+			return fmt.Errorf("save list %s: %w", list.ID, err)
+		}
 		tasks, err := p.ListTasks(ctx, list.ID, provider.ListOptions{})
 		if err != nil {
-			continue
+			return fmt.Errorf("list tasks %s: %w", list.ID, err)
 		}
 		for _, task := range tasks {
 			if task.ListID == "" {
@@ -133,7 +138,9 @@ func PullProviderTasksIntoLocal(ctx context.Context, taskStore storage.Storage, 
 			if task.Source == "" {
 				task.Source = model.TaskSource(providerName)
 			}
-			_ = taskStore.SaveTask(ctx, &task)
+			if err := taskStore.SaveTask(ctx, &task); err != nil {
+				return fmt.Errorf("save task %s: %w", task.ID, err)
+			}
 		}
 	}
 	return nil
@@ -175,9 +182,13 @@ func syncMicrosoftChecklistStep(ctx context.Context, taskStore storage.Storage, 
 		task.SourceRawID = "ms_step:" + item.ID
 		task.Source = model.SourceMicrosoft
 		task.ListID = listID
-		_ = taskStore.SaveTask(ctx, task)
+		if err := taskStore.SaveTask(ctx, task); err != nil {
+			return fmt.Errorf("save checklist step: %w", err)
+		}
 		if originalID != "" && originalID != canonicalID {
-			_ = taskStore.DeleteTask(ctx, originalID)
+			if err := taskStore.DeleteTask(ctx, originalID); err != nil {
+				return fmt.Errorf("delete original checklist step: %w", err)
+			}
 		}
 		result.Pushed++
 		return nil
@@ -195,7 +206,9 @@ func syncMicrosoftChecklistStep(ctx context.Context, taskStore storage.Storage, 
 	task.SourceRawID = "ms_step:" + stepID
 	task.Source = model.SourceMicrosoft
 	task.ListID = listID
-	_ = taskStore.SaveTask(ctx, task)
+	if err := taskStore.SaveTask(ctx, task); err != nil {
+		return fmt.Errorf("save checklist step: %w", err)
+	}
 	result.Updated++
 	return nil
 }

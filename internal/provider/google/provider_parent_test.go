@@ -139,4 +139,3 @@ func TestProviderUpdateTask_MoveToParent(t *testing.T) {
 		t.Fatalf("expected 1 move call, got %d", moveCalls)
 	}
 }
-

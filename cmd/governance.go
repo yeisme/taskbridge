@@ -119,10 +119,10 @@ func init() {
 func runGovernanceOverdueHealth(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 	taskStore, _, cleanup, err := getCLIStores()
-	defer cleanup()
 	if err != nil {
 		return commandError("初始化存储失败", err)
 	}
+	defer cleanup()
 	result, err := (&govsvc.Service{TaskStore: taskStore, Config: cfg.Intelligence}).OverdueHealth(ctx, govsvc.OverdueHealthOptions{
 		Filter:             govsvc.FilterOptions{Source: governanceSource, ListIDs: governanceListIDs},
 		IncludeSuggestions: governanceIncludeSuggestions,
@@ -136,10 +136,10 @@ func runGovernanceOverdueHealth(_ *cobra.Command, _ []string) error {
 func runGovernanceResolveOverdue(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 	taskStore, _, cleanup, err := getCLIStores()
-	defer cleanup()
 	if err != nil {
 		return commandError("初始化存储失败", err)
 	}
+	defer cleanup()
 	if len(governanceActionItems) == 0 {
 		return usageError("请至少传入一个 --action taskID:type[:due_date]")
 	}
@@ -157,10 +157,10 @@ func runGovernanceResolveOverdue(_ *cobra.Command, _ []string) error {
 func runGovernanceRebalanceLongTerm(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 	taskStore, _, cleanup, err := getCLIStores()
-	defer cleanup()
 	if err != nil {
 		return commandError("初始化存储失败", err)
 	}
+	defer cleanup()
 	result, err := (&govsvc.Service{TaskStore: taskStore, Config: cfg.Intelligence}).RebalanceLongTerm(ctx, govsvc.RebalanceLongTermOptions{
 		Filter: govsvc.FilterOptions{Source: governanceSource, ListIDs: governanceListIDs},
 		DryRun: governanceDryRun,
@@ -174,10 +174,10 @@ func runGovernanceRebalanceLongTerm(_ *cobra.Command, _ []string) error {
 func runGovernanceDetectDecomposition(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 	taskStore, _, cleanup, err := getCLIStores()
-	defer cleanup()
 	if err != nil {
 		return commandError("初始化存储失败", err)
 	}
+	defer cleanup()
 	providers, _ := loadAuthenticatedProviders("")
 	result, err := (&govsvc.Service{TaskStore: taskStore, Providers: providers, Config: cfg.Intelligence}).DetectDecomposition(ctx, govsvc.DetectDecompositionOptions{
 		Filter: govsvc.FilterOptions{Source: governanceSource, ListIDs: governanceListIDs},
@@ -192,10 +192,10 @@ func runGovernanceDetectDecomposition(_ *cobra.Command, _ []string) error {
 func runGovernanceDecomposeTask(_ *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskStore, _, cleanup, err := getCLIStores()
-	defer cleanup()
 	if err != nil {
 		return commandError("初始化存储失败", err)
 	}
+	defer cleanup()
 	providers, _ := loadAuthenticatedProviders("")
 	result, err := (&govsvc.Service{TaskStore: taskStore, Providers: providers, Config: cfg.Intelligence}).DecomposeTask(ctx, strings.TrimSpace(args[0]), govsvc.DecomposeTaskOptions{
 		Provider:   governanceProvider,
@@ -211,10 +211,10 @@ func runGovernanceDecomposeTask(_ *cobra.Command, args []string) error {
 func runGovernanceAchievement(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 	taskStore, _, cleanup, err := getCLIStores()
-	defer cleanup()
 	if err != nil {
 		return commandError("初始化存储失败", err)
 	}
+	defer cleanup()
 	result, err := (&govsvc.Service{TaskStore: taskStore, Config: cfg.Intelligence}).Achievement(ctx, govsvc.AchievementOptions{
 		WindowDays:      governanceWindowDays,
 		ComparePrevious: governanceComparePrevious,

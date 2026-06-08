@@ -57,6 +57,8 @@ var providerDefinitions = map[string]ProviderDefinition{
 	},
 }
 
+var providerOrder = []string{"google", "microsoft", "feishu", "ticktick", "dida", "todoist"}
+
 // aliasToName 别名到标准名称的映射（自动生成）
 var aliasToName map[string]string
 
@@ -92,13 +94,22 @@ func GetProviderDefinition(name string) (ProviderDefinition, bool) {
 // GetAllProviders 获取所有 Provider 定义（按固定顺序）
 func GetAllProviders() []ProviderDefinition {
 	result := make([]ProviderDefinition, 0, len(providerDefinitions))
-	order := []string{"google", "microsoft", "feishu", "ticktick", "dida", "todoist"}
-	for _, name := range order {
+	for _, name := range providerOrder {
 		if def, ok := providerDefinitions[name]; ok {
 			result = append(result, def)
 		}
 	}
 	return result
+}
+
+func GetAllProviderNames() []string {
+	names := make([]string, 0, len(providerOrder))
+	for _, name := range providerOrder {
+		if _, ok := providerDefinitions[name]; ok {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // IsValidProvider 检查是否是有效的 Provider 名称

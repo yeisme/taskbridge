@@ -379,15 +379,15 @@ func runAuthShow(cmd *cobra.Command, args []string) error {
 	}
 
 	pairs := map[string]string{
-		"Provider":  snapshot.Provider,
-		"显示名称":      snapshot.DisplayName,
-		"简写":        snapshot.ShortName,
+		"Provider": snapshot.Provider,
+		"显示名称":     snapshot.DisplayName,
+		"简写":       snapshot.ShortName,
 		"Token 文件": snapshot.TokenPath,
-		"状态":        snapshot.StatusText,
-		"已认证":       authenticated,
-		"Token 有效":  valid,
-		"过期时间":      snapshot.ExpiresAt,
-		"建议操作":      snapshot.NextAction,
+		"状态":       snapshot.StatusText,
+		"已认证":      authenticated,
+		"Token 有效": valid,
+		"过期时间":     snapshot.ExpiresAt,
+		"建议操作":     snapshot.NextAction,
 	}
 
 	fmt.Println()
@@ -477,7 +477,7 @@ func loginMicrosoft() error {
 	 "tenant_id": "common",
 	 "redirect_url": "http://localhost:8080/callback"
 }`)
-		return nil
+		return commandError("凭证文件不存在", nil)
 	}
 
 	// 加载凭证
@@ -567,7 +567,7 @@ func loginFeishu() error {
   "redirect_url": "http://127.0.0.1:3456/callback",
   "scopes": ["task:tasklist:read","task:tasklist:write","task:task:read","task:task:write"]
 }`)
-		return nil
+		return commandError("凭证文件不存在", nil)
 	}
 
 	oauthClient, err := feishu.LoadCredentials(credentialsPath)
@@ -716,7 +716,7 @@ func refreshTickStyleProvider(providerName string) error {
 	hasToken, err := tokenstore.Has(tokenPath, providerName)
 	if err != nil {
 		fmt.Printf("❌ 读取 %s token 失败: %v\n", displayName, err)
-		return nil
+		return commandError("读取 token 失败", err)
 	}
 	if !hasToken {
 		fmt.Printf("❌ %s 凭证不存在，请先执行: taskbridge auth login %s\n", displayName, providerName)
@@ -812,7 +812,7 @@ type providerMeta struct {
 }
 
 func getAuthProviderOrder() []string {
-	return []string{"google", "microsoft", "feishu", "ticktick", "dida", "todoist"}
+	return provider.GetAllProviderNames()
 }
 
 func getAuthProviderMeta(name string) providerMeta {

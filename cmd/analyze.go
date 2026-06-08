@@ -100,10 +100,10 @@ func init() {
 func getTasksForAnalysis() ([]model.Task, error) {
 	ctx := context.Background()
 	store, cleanup, err := getStore()
-	defer cleanup()
 	if err != nil {
 		return nil, fmt.Errorf("创建存储失败: %w", err)
 	}
+	defer cleanup()
 
 	// 获取所有任务
 	tasks, err := store.ListTasks(ctx, storage.ListOptions{})
@@ -193,7 +193,7 @@ func runAnalyzeQuadrant(_ *cobra.Command, _ []string) error {
 	if analyzeFormat == "json" {
 		data, _ := json.MarshalIndent(analysis, "", "  ")
 		fmt.Println(string(data))
-	return nil
+		return nil
 	}
 
 	// 文本格式
@@ -308,7 +308,7 @@ func runAnalyzePriority(_ *cobra.Command, _ []string) error {
 	if analyzeFormat == "json" {
 		data, _ := json.MarshalIndent(analysis, "", "  ")
 		fmt.Println(string(data))
-	return nil
+		return nil
 	}
 
 	// 文本格式
@@ -420,7 +420,7 @@ func runAnalyzeTime(_ *cobra.Command, _ []string) error {
 	if analyzeFormat == "json" {
 		data, _ := json.MarshalIndent(analysis, "", "  ")
 		fmt.Println(string(data))
-	return nil
+		return nil
 	}
 
 	// 文本格式
@@ -506,7 +506,7 @@ func runAnalyzeTrend(cmd *cobra.Command, args []string) error {
 	if analyzeFormat == "json" {
 		data, _ := json.MarshalIndent(analysis, "", "  ")
 		fmt.Println(string(data))
-	return nil
+		return nil
 	}
 
 	// 文本格式

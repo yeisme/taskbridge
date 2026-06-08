@@ -245,10 +245,10 @@ func runProjectSplitMarkdown(_ *cobra.Command, args []string) error {
 func runProjectConfirm(_ *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskStore, projectStore, cleanup, err := getCLIStores()
-	defer cleanup()
 	if err != nil {
 		return commandError("初始化存储失败", err)
 	}
+	defer cleanup()
 	result, err := (&projectservice.Service{TaskStore: taskStore, ProjectStore: projectStore}).ConfirmProject(ctx, projectservice.ConfirmInput{
 		ProjectID:  args[0],
 		PlanID:     projectPlanID,
@@ -263,10 +263,10 @@ func runProjectConfirm(_ *cobra.Command, args []string) error {
 func runProjectSync(_ *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskStore, projectStore, cleanup, err := getCLIStores()
-	defer cleanup()
 	if err != nil {
 		return commandError("初始化存储失败", err)
 	}
+	defer cleanup()
 	projectID := strings.TrimSpace(args[0])
 	if _, err := projectStore.GetProject(ctx, projectID); err != nil {
 		return commandError("读取项目失败", err)

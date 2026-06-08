@@ -132,7 +132,7 @@ type Model struct {
 	currentView   ViewType
 	filtered      []model.Task
 	selected      int
-	quadrant      int // 0 = all, 1-4 = specific
+	quadrant      int    // 0 = all, 1-4 = specific
 	statusFilter  string // "" = all, "todo", "in_progress", "completed"
 	width         int
 	height        int
@@ -286,12 +286,17 @@ func (m Model) handleConfirmDeleteInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y":
 		if m.expandedTask != nil && m.store != nil {
 			ctx := context.Background()
-			_ = m.store.DeleteTask(ctx, m.expandedTask.ID)
+			if err := m.store.DeleteTask(ctx, m.expandedTask.ID); err != nil {
+				m.err = fmt.Errorf("删除任务失败: %w", err)
+				return m, nil
+			}
 			// Reload tasks
 			tasks, err := m.store.ListTasks(ctx, storage.ListOptions{})
-			if err == nil {
-				m.tasks = tasks
+			if err != nil {
+				m.err = fmt.Errorf("重新加载任务失败: %w", err)
+				return m, nil
 			}
+			m.tasks = tasks
 		}
 		m.inputMode = ModeNormal
 		m.expandedTask = nil
@@ -400,13 +405,18 @@ func (m Model) toggleComplete() (tea.Model, tea.Cmd) {
 		task.CompletedAt = &now
 	}
 
-	_ = m.store.SaveTask(ctx, &task)
+	if err := m.store.SaveTask(ctx, &task); err != nil {
+		m.err = fmt.Errorf("更新任务失败: %w", err)
+		return m, nil
+	}
 
 	// Reload tasks
 	tasks, err := m.store.ListTasks(ctx, storage.ListOptions{})
-	if err == nil {
-		m.tasks = tasks
+	if err != nil {
+		m.err = fmt.Errorf("重新加载任务失败: %w", err)
+		return m, nil
 	}
+	m.tasks = tasks
 	m.applyFilter()
 	if m.selected >= len(m.filtered) && m.selected > 0 {
 		m.selected = len(m.filtered) - 1

@@ -11,6 +11,7 @@ import (
 	"github.com/yeisme/taskbridge/internal/model"
 	"github.com/yeisme/taskbridge/internal/provider"
 	"github.com/yeisme/taskbridge/internal/storage"
+	"github.com/yeisme/taskbridge/pkg/output"
 	"github.com/yeisme/taskbridge/pkg/ui"
 )
 
@@ -66,10 +67,10 @@ func runLists(cmd *cobra.Command, args []string) error {
 	}
 
 	store, cleanup, err := getStore()
-	defer cleanup()
 	if err != nil {
 		return commandError("创建存储失败", err)
 	}
+	defer cleanup()
 
 	lists, err := store.ListTaskLists(ctx)
 	if err != nil {
@@ -161,8 +162,8 @@ func printListsTable(lists []listSummary) {
 	for _, list := range lists {
 		table.AddRow(
 			list.Provider,
-			truncateDisplay(list.ListID, 30),
-			truncateDisplay(list.ListName, 26),
+			output.TruncateDisplay(list.ListID, 30),
+			output.TruncateDisplay(list.ListName, 26),
 			fmt.Sprintf("%d", list.TaskCountLocal),
 		)
 	}

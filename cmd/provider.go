@@ -154,8 +154,7 @@ func runProviderList(_ *cobra.Command, _ []string) error {
 	// 使用 lipgloss table 组件
 	table := ui.NewTable("名称", "简写", "状态", "认证方式", "描述")
 
-	order := []string{"google", "microsoft", "feishu", "ticktick", "dida", "todoist"}
-	for _, name := range order {
+	for _, name := range provider.GetAllProviderNames() {
 		p := providers[name]
 		// 获取实际认证状态
 		authStatus, _, _ := getProviderStatus(name)
