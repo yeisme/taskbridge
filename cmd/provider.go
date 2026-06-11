@@ -250,10 +250,8 @@ func renderProviderWriteReceipt(projection clioutput.Projection) string {
 	b.WriteString("Status\n")
 	b.WriteString(projection.Summary)
 	b.WriteString("\n\nFacts\n")
-	b.WriteString("- provider: ")
-	b.WriteString(fmt.Sprint(projection.Facts["provider"]))
-	b.WriteString("\n- state: ")
-	b.WriteString(fmt.Sprint(projection.Facts["state"]))
+	fmt.Fprint(&b, "- provider: ", projection.Facts["provider"])
+	fmt.Fprint(&b, "\n- state: ", projection.Facts["state"])
 	b.WriteString("\n")
 	if len(projection.Actions) > 0 {
 		b.WriteString("\nRecommended next steps\n")

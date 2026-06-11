@@ -602,7 +602,7 @@ func (m Model) renderDashboardView() string {
 			if t.Status == model.StatusCompleted {
 				statusMark = completedStyle.Render("✓")
 			}
-			b.WriteString(fmt.Sprintf("  %s %s %s\n", statusMark, mark, t.Title))
+			fmt.Fprintf(&b, "  %s %s %s\n", statusMark, mark, t.Title)
 		}
 	}
 	b.WriteString("\n")
@@ -654,7 +654,7 @@ func (m Model) renderDashboardView() string {
 		}
 		qBadge := ui.QuadrantStyle(int(qd.q)).Render(fmt.Sprintf("%s %s", qd.icon, qd.label))
 		bar := ui.ProgressBar(15, pct)
-		b.WriteString(fmt.Sprintf("  %s %s %d/%d\n", qBadge, bar, completed, count))
+		fmt.Fprintf(&b, "  %s %s %d/%d\n", qBadge, bar, completed, count)
 	}
 	b.WriteString("\n")
 
@@ -671,7 +671,7 @@ func (m Model) renderDashboardView() string {
 			} else {
 				statusIcon = lipgloss.NewStyle().Foreground(ui.ThemeRed).Render("✗")
 			}
-			b.WriteString(fmt.Sprintf("  %s %s\n", statusIcon, name))
+			fmt.Fprintf(&b, "  %s %s\n", statusIcon, name)
 		}
 	}
 	b.WriteString(ui.DimStyle().Render("Press s to sync | Tab for task list\n"))

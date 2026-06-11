@@ -167,7 +167,7 @@ func RenderExplain(p Projection) string {
 
 	if p.Confidence != nil {
 		b.WriteString("\nConfidence\n")
-		b.WriteString(fmt.Sprintf("%.2f", *p.Confidence))
+		fmt.Fprintf(&b, "%.2f", *p.Confidence)
 		b.WriteString("\n")
 	}
 
