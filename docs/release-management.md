@@ -1,6 +1,6 @@
 # TaskBridge 版本与发布流程
 
-当前稳定版本：`v1.0.5`（截至 2026-06-11）
+当前稳定版本：`v1.0.6`（截至 2026-06-11）
 
 ## 目标
 
@@ -55,9 +55,9 @@ task release:local
 
 ```bash
 git add .
-git commit -m "release: v1.0.5"
-git tag -a v1.0.5 -m "Release v1.0.5"
+git commit -m "release: v1.0.6"
+git tag -a v1.0.6 -m "Release v1.0.6"
 git push origin main
-git push origin v1.0.5
+git push origin v1.0.6
 task release
 ```

@@ -102,5 +102,5 @@ jobs:
           version: v2.12.6
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PUBLISHER_TOKEN }}
           PUBLISHER_TOKEN: ${{ secrets.PUBLISHER_TOKEN }}
