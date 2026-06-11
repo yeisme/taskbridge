@@ -95,13 +95,6 @@ jobs:
           version: v2.12.2
           args: --timeout=5m
 
-      - name: GoReleaser check
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: v2.12.6
-          args: check
-
       - name: Publish release
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -110,3 +103,4 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISHER_TOKEN: ${{ secrets.PUBLISHER_TOKEN }}

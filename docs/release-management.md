@@ -1,6 +1,6 @@
 # TaskBridge 版本与发布流程
 
-当前稳定版本：`v1.0.4`（截至 2026-06-11）
+当前稳定版本：`v1.0.5`（截至 2026-06-11）
 
 ## 目标
 
@@ -23,6 +23,24 @@
 - Windows: `amd64` / `arm64`
 - 源码包：`taskbridge_source.tar.gz`
 - Linux 包管理格式：`.deb` / `.rpm` / `.apk`
+- Scoop manifest：推送到 `yeisme/scoop-bucket/bucket/taskbridge.json`
+- Homebrew formula：推送到 `yeisme/homebrew-tap/Formula/taskbridge.rb`
+
+## 包管理器安装
+
+### Scoop (Windows)
+
+```powershell
+scoop bucket add yeisme https://github.com/yeisme/scoop-bucket
+scoop install yeisme/taskbridge
+```
+
+### Homebrew (macOS / Linux)
+
+```bash
+brew tap yeisme/tap
+brew install taskbridge
+```
 
 ## 发布前检查
 
@@ -37,9 +55,9 @@ task release:local
 
 ```bash
 git add .
-git commit -m "release: v1.0.4"
-git tag -a v1.0.4 -m "Release v1.0.4"
+git commit -m "release: v1.0.5"
+git tag -a v1.0.5 -m "Release v1.0.5"
 git push origin main
-git push origin v1.0.4
+git push origin v1.0.5
 task release
 ```

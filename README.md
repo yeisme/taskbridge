@@ -12,6 +12,24 @@
 
 ### 安装
 
+**Homebrew (macOS / Linux)：**
+
+```bash
+brew tap yeisme/tap
+brew install taskbridge
+```
+
+**Scoop (Windows)：**
+
+```powershell
+scoop bucket add yeisme https://github.com/yeisme/scoop-bucket
+scoop install yeisme/taskbridge
+```
+
+**从 Release 下载二进制：** 见 [Releases](https://github.com/yeisme/taskbridge/releases)。
+
+**从源码构建：**
+
 ```bash
 git clone https://github.com/yeisme/taskbridge.git
 cd taskbridge
