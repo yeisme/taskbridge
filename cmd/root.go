@@ -1,4 +1,4 @@
-// Package cmd 提供 CLI 命令
+// Package cmd provides CLI commands
 package cmd
 
 import (
@@ -14,53 +14,58 @@ import (
 )
 
 func init() {
-	// 设置 Windows 控制台输出为 UTF-8
+	//Set Windows console output to UTF-8
 	if err := os.Setenv("LANG", "en_US.UTF-8"); err != nil {
-		// 非关键错误，仅记录
-		fmt.Fprintf(os.Stderr, "警告: 设置环境变量失败: %v\n", err)
+		//Non-critical errors, only logged
+		fmt.Fprintf(os.Stderr, "Warning: Failed to set environment variables: %v\n", err)
 	}
 }
 
 var (
-	cfgFile     string
-	verbose     bool
-	quiet       bool
-	storagePath string
-	storageType string
-	logLevel    string
-	providers   string
-	cfg         *config.Config
+	cfgFile       string
+	verbose       bool
+	quiet         bool
+	storagePath   string
+	storageType   string
+	logLevel      string
+	providers     string
+	outputJSON    bool
+	outputAgent   bool
+	outputEvents  bool
+	outputExplain bool
+	colorMode     string
+	cfg           *config.Config
 )
 
-// rootCmd 根命令
+// rootCmd root command
 var rootCmd = &cobra.Command{
 	Use:   "taskbridge",
-	Short: "TaskBridge - 面向 AI 与多 Todo 平台的 CLI 工作流工具",
-	Long: `TaskBridge 是一个以 CLI 为主的任务工作流工具，
-用于连接各种 Todo 软件与 AI，统一任务模型、同步流程与自动化能力。
+	Short: "TaskBridge - CLI workflow tool for AI and multi-Todo platforms",
+	Long: `TaskBridge is a CLI-based task workflow tool.
+Used to connect various Todo software and AI to unify task models, synchronize processes and automation capabilities.
 
-支持的平台：
+Supported platforms:
   - Microsoft Todo
   - Google Tasks
-  - 飞书任务
+  - Feishu Tasks
   - TickTick
-  - Dida365（滴答清单国内）
+  - Dida365 (domestic TickTick)
   - Todoist
   - OmniFocus (macOS)
   - Apple Reminders (macOS/iOS)
 
-示例：
-  taskbridge provider list     # 查看可用 Provider
-  taskbridge sync              # 执行单次同步
-  taskbridge list              # 列出所有任务
-  taskbridge analyze           # 分析任务（四象限视图）
-  taskbridge project create    # 创建项目草稿
-  taskbridge governance achievement # 任务成就分析`,
+Example:
+  taskbridge provider list # View available Providers
+  taskbridge sync #Perform a single synchronization
+  taskbridge list # List all tasks
+  taskbridge analyze # Analysis task (four-quadrant view)
+  taskbridge project create # Create project draft
+  taskbridge governance achievement # task achievement analysis`,
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
 
-// Execute 执行命令
+// Execute execute command
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, formatCLIError(err))
@@ -71,21 +76,26 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "配置文件路径（已弃用，不再读取）")
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "详细输出")
-	rootCmd.PersistentFlags().BoolVar(&quiet, "quiet", false, "精简输出（管道/脚本友好）")
-	rootCmd.PersistentFlags().StringVar(&storagePath, "storage-path", "", "任务存储路径（可用环境变量 TASKBRIDGE_STORAGE_PATH）")
-	rootCmd.PersistentFlags().StringVar(&storageType, "storage-type", "", "存储类型：file|mongodb（可用环境变量 TASKBRIDGE_STORAGE_TYPE）")
-	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "日志级别：debug|info|warn|error（可用环境变量 TASKBRIDGE_LOG_LEVEL）")
-	rootCmd.PersistentFlags().StringVar(&providers, "providers", "", "启用的 provider，逗号分隔（可用环境变量 TASKBRIDGE_PROVIDERS）")
-	_ = rootCmd.PersistentFlags().MarkDeprecated("config", "配置文件已弃用，请改用环境变量和命令行参数")
+	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "Configuration file path (deprecated, no longer read)")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
+	rootCmd.PersistentFlags().BoolVar(&quiet, "quiet", false, "Streamlined output (pipe/script friendly)")
+	rootCmd.PersistentFlags().StringVar(&storagePath, "storage-path", "", "Task storage path (available environment variable TASKBRIDGE_STORAGE_PATH)")
+	rootCmd.PersistentFlags().StringVar(&storageType, "storage-type", "", "Storage type: file|mongodb (available environment variable TASKBRIDGE_STORAGE_TYPE)")
+	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "Log level: debug|info|warn|error (available environment variable TASKBRIDGE_LOG_LEVEL)")
+	rootCmd.PersistentFlags().StringVar(&providers, "providers", "", "Enabled providers, comma separated (available environment variable TASKBRIDGE_PROVIDERS)")
+	rootCmd.PersistentFlags().BoolVar(&outputJSON, "json", false, "Output an AI-native JSON envelope")
+	rootCmd.PersistentFlags().BoolVar(&outputAgent, "agent", false, "Output stable key=value facts for agents")
+	rootCmd.PersistentFlags().BoolVar(&outputEvents, "events", false, "Output newline-delimited JSON events when supported")
+	rootCmd.PersistentFlags().BoolVar(&outputExplain, "explain", false, "Output an explainable decision summary when supported")
+	rootCmd.PersistentFlags().StringVar(&colorMode, "color", "auto", "Color mode: auto|always|never")
+	_ = rootCmd.PersistentFlags().MarkDeprecated("config", "Configuration files are deprecated, use environment variables and command line parameters instead")
 }
 
-// initConfig 初始化配置
+// initConfig initialization configuration
 func initConfig() {
 	cfg = config.DefaultConfig()
 
-	// 1) 环境变量覆盖
+	//1) Environment variable coverage
 	if v := strings.TrimSpace(os.Getenv("TASKBRIDGE_STORAGE_PATH")); v != "" {
 		cfg.Storage.Path = v
 	}
@@ -100,7 +110,7 @@ func initConfig() {
 	}
 	applyProvidersFromList(strings.TrimSpace(os.Getenv("TASKBRIDGE_PROVIDERS")))
 
-	// 2) 命令行参数覆盖环境变量
+	//2) Command line parameters override environment variables
 	if storagePath != "" {
 		cfg.Storage.Path = storagePath
 	}
@@ -117,7 +127,7 @@ func initConfig() {
 		applyProvidersFromList(providers)
 	}
 
-	// 初始化全局日志级别，避免调试日志误判为错误
+	//Initialize the global log level to avoid debugging logs being misjudged as errors
 	if err := logger.Init(&logger.Config{
 		Level:      cfg.App.LogLevel,
 		Format:     "json",
@@ -125,9 +135,9 @@ func initConfig() {
 		TimeFormat: "",
 		Caller:     false,
 	}); err != nil {
-		// 日志初始化失败不应中断主流程，回退到 info
+		//Log initialization failure should not interrupt the main process and fall back to info
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-		fmt.Fprintf(os.Stderr, "警告: 初始化日志失败，已回退到 info 级别: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: Failed to initialize log, fell back to info level: %v\n", err)
 	}
 }
 
@@ -136,7 +146,7 @@ func applyProvidersFromList(value string) {
 		return
 	}
 
-	// 清空后按列表启用
+	//After clearing, enable according to the list
 	cfg.Providers.Google.Enabled = false
 	cfg.Providers.Microsoft.Enabled = false
 	cfg.Providers.Feishu.Enabled = false
@@ -162,26 +172,18 @@ func applyProvidersFromList(value string) {
 		case "":
 			// ignore empty entry
 		default:
-			fmt.Fprintf(os.Stderr, "警告: 忽略未知 provider: %s\n", raw)
+			fmt.Fprintf(os.Stderr, "Warning: Ignoring unknown provider: %s\n", raw)
 		}
 	}
 }
 
-// GetConfig 获取配置
+// GetConfig Get configuration
 func GetConfig() *config.Config {
 	return cfg
 }
 
-// IsQuietMode returns true when --quiet flag is set or stdout is a pipe.
-// Commands should use this to produce machine-friendly output.
+// IsQuietMode returns true when --quiet is explicitly set.
+// Scripts should request machine output with --json/--agent instead of relying on pipe detection.
 func IsQuietMode() bool {
-	if quiet {
-		return true
-	}
-	// Detect pipe (same check as output.IsPipe)
-	info, err := os.Stdout.Stat()
-	if err != nil {
-		return false
-	}
-	return (info.Mode() & os.ModeCharDevice) == 0
+	return quiet
 }

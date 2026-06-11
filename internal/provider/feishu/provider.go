@@ -95,7 +95,7 @@ func (p *Provider) Name() string {
 
 // DisplayName 返回 Provider 显示名称
 func (p *Provider) DisplayName() string {
-	return "飞书任务"
+	return "Feishu Tasks"
 }
 
 // Authenticate 认证

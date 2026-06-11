@@ -18,20 +18,20 @@ import (
 	"github.com/yeisme/taskbridge/pkg/ui"
 )
 
-// tuiCmd TUI 命令
+// tuiCmd TUI command
 var tuiCmd = &cobra.Command{
 	Use:   "tui",
-	Short: "交互式终端界面",
-	Long: `启动交互式终端界面（TUI）查看 TaskBridge 任务。
+	Short: "interactive terminal interface",
+	Long: `Open the interactive terminal interface (TUI) to browse and update TaskBridge tasks.
 
-使用键盘导航:
-  ↑/k  上移      ↓/j  下移
-  ←/h  左侧标签  →/l  右侧标签
-  Enter 展开详情  x  完成/恢复
-  d    删除(带确认) q  退出
-  r    刷新      /    搜索
-  1-4  按象限筛选 a    显示全部
-  s    排序切换`,
+Keyboard navigation:
+  ↑/k move up    ↓/j move down
+  ←/h left tab   →/l right tab
+  Enter expand details    x complete/restore
+  d delete with confirmation    q quit
+  r refresh      / search
+  1-4 filter by quadrant    a show all
+  s switch sorting`,
 	RunE: runTUI,
 }
 
@@ -39,7 +39,7 @@ func init() {
 	rootCmd.AddCommand(tuiCmd)
 }
 
-// ViewType 视图类型
+// ViewType view type
 type ViewType int
 
 const (
@@ -52,7 +52,7 @@ const (
 	ViewCount
 )
 
-// SortType 排序类型
+// SortType sorting type
 type SortType int
 
 const (
@@ -63,7 +63,7 @@ const (
 	SortCount
 )
 
-// InputMode 输入模式
+// InputMode input mode
 type InputMode int
 
 const (
@@ -73,7 +73,7 @@ const (
 	ModeConfirmDelete
 )
 
-// 样式 - 使用 pkg/ui 主题系统，保留 TUI 专用样式
+// Style - using pkg/ui theme system, retaining TUI-specific styles
 var (
 	selectedStyle = lipgloss.NewStyle().
 			Foreground(ui.ThemePurple).
@@ -119,16 +119,16 @@ var (
 	}
 )
 
-// Model TUI 模型
+// Model TUI model
 type Model struct {
-	// 数据
+	// data
 	tasks      []model.Task
 	taskLists  []model.TaskList
 	providers  map[model.TaskSource]provider.Provider
 	store      storage.Storage
 	googleProv provider.Provider
 
-	// UI 状态
+	// UI state
 	currentView   ViewType
 	filtered      []model.Task
 	selected      int
@@ -146,7 +146,7 @@ type Model struct {
 	confirmDelete bool
 }
 
-// 初始化模型
+// Initialize model
 func initialModel() Model {
 	return Model{
 		loading:     true,
@@ -157,7 +157,7 @@ func initialModel() Model {
 	}
 }
 
-// 消息类型
+// Message type
 type loadMsg struct {
 	tasks      []model.Task
 	taskLists  []model.TaskList
@@ -167,7 +167,7 @@ type loadMsg struct {
 	err        error
 }
 
-// 加载数据
+// Load data
 func loadData() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
@@ -198,12 +198,12 @@ func loadData() tea.Cmd {
 	}
 }
 
-// Init 初始化
+// Initialization
 func (m Model) Init() tea.Cmd {
 	return loadData()
 }
 
-// Update 更新
+// Update
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -239,7 +239,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleSearchInput 处理搜索输入
+// handleSearchInput handles search input
 func (m Model) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -263,7 +263,7 @@ func (m Model) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleDetailInput 处理任务详情模式
+// handleDetailInput handles task details mode
 func (m Model) handleDetailInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "enter":
@@ -280,20 +280,20 @@ func (m Model) handleDetailInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleConfirmDeleteInput 处理删除确认
+// handleConfirmDeleteInput handles deletion confirmation
 func (m Model) handleConfirmDeleteInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch strings.ToLower(msg.String()) {
 	case "y":
 		if m.expandedTask != nil && m.store != nil {
 			ctx := context.Background()
 			if err := m.store.DeleteTask(ctx, m.expandedTask.ID); err != nil {
-				m.err = fmt.Errorf("删除任务失败: %w", err)
+				m.err = fmt.Errorf("failed to delete task: %w", err)
 				return m, nil
 			}
 			// Reload tasks
 			tasks, err := m.store.ListTasks(ctx, storage.ListOptions{})
 			if err != nil {
-				m.err = fmt.Errorf("重新加载任务失败: %w", err)
+				m.err = fmt.Errorf("failed to reload tasks: %w", err)
 				return m, nil
 			}
 			m.tasks = tasks
@@ -312,7 +312,7 @@ func (m Model) handleConfirmDeleteInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleNormalInput 处理正常输入
+// handleNormalInput handles normal input
 func (m Model) handleNormalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
@@ -388,7 +388,7 @@ func (m Model) handleNormalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// toggleComplete 切换任务完成状态
+// toggleComplete toggles task completion status
 func (m Model) toggleComplete() (tea.Model, tea.Cmd) {
 	if m.currentView != ViewTasks || len(m.filtered) == 0 || m.selected >= len(m.filtered) || m.store == nil {
 		return m, nil
@@ -406,14 +406,14 @@ func (m Model) toggleComplete() (tea.Model, tea.Cmd) {
 	}
 
 	if err := m.store.SaveTask(ctx, &task); err != nil {
-		m.err = fmt.Errorf("更新任务失败: %w", err)
+		m.err = fmt.Errorf("failed to update task: %w", err)
 		return m, nil
 	}
 
 	// Reload tasks
 	tasks, err := m.store.ListTasks(ctx, storage.ListOptions{})
 	if err != nil {
-		m.err = fmt.Errorf("重新加载任务失败: %w", err)
+		m.err = fmt.Errorf("failed to reload tasks: %w", err)
 		return m, nil
 	}
 	m.tasks = tasks
@@ -424,7 +424,7 @@ func (m Model) toggleComplete() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// getMaxItems 获取当前视图的最大项目数
+// getMaxItems gets the maximum number of items in the current view
 func (m *Model) getMaxItems() int {
 	switch m.currentView {
 	case ViewTasks, ViewQuadrant:
@@ -438,38 +438,36 @@ func (m *Model) getMaxItems() int {
 	}
 }
 
-// getSortName 获取排序名称
+// getSortName gets the sort name
 func (m *Model) getSortName() string {
 	switch m.sortBy {
 	case SortByDueDate:
-		return "截止日期"
+		return "due date"
 	case SortByPriority:
-		return "优先级"
+		return "priority"
 	case SortByCreated:
-		return "创建时间"
+		return "creation time"
 	case SortByTitle:
-		return "标题"
+		return "title"
 	default:
-		return "未知"
+		return "unknown"
 	}
 }
 
-// applyFilter 应用筛选和排序
+// applyFilter applies filtering and sorting
 func (m *Model) applyFilter() {
 	m.filtered = nil
 
 	for _, t := range m.tasks {
-		// 象限筛选
+		// Quadrant filter
 		if m.quadrant > 0 && int(t.Quadrant) != m.quadrant {
 			continue
 		}
-
-		// 状态筛选
+		// Status filter
 		if m.statusFilter != "" && string(t.Status) != m.statusFilter {
 			continue
 		}
-
-		// 搜索筛选
+		// Search filter
 		if m.inputMode == ModeSearch && m.inputBuffer != "" {
 			if !strings.Contains(strings.ToLower(t.Title), strings.ToLower(m.inputBuffer)) {
 				continue
@@ -479,7 +477,7 @@ func (m *Model) applyFilter() {
 		m.filtered = append(m.filtered, t)
 	}
 
-	// 排序
+	// Sort
 	sort.Slice(m.filtered, func(i, j int) bool {
 		switch m.sortBy {
 		case SortByDueDate:
@@ -505,45 +503,45 @@ func (m *Model) applyFilter() {
 	})
 }
 
-// View 渲染
+// View rendering
 func (m Model) View() string {
 	if m.loading {
-		return "\n  ⏳ 加载中...\n"
+		return "\n ⏳ Loading...\n"
 	}
 
 	if m.err != nil {
-		return fmt.Sprintf("\n  ❌ 加载失败: %v\n", m.err)
+		return fmt.Sprintf("\n ❌ Failed to load: %v\n", m.err)
 	}
 
 	var b strings.Builder
 
-	// 渲染标签栏
+	// Render tab bar
 	b.WriteString(m.renderTabs())
 	b.WriteString("\n")
 
-	// 渲染筛选栏
+	// Render filter bar
 	b.WriteString(m.renderFilterBar())
 	b.WriteString("\n")
 
-	// 渲染搜索输入
+	// Render search input
 	if m.inputMode == ModeSearch {
 		b.WriteString(m.renderSearchInput())
 		b.WriteString("\n")
 	}
 
-	// 渲染确认删除对话框
+	// Render confirm delete dialog
 	if m.inputMode == ModeConfirmDelete && m.expandedTask != nil {
 		b.WriteString("\n")
-		b.WriteString(confirmStyle.Render(fmt.Sprintf("  ⚠ 确定要删除任务 \"%s\"？(y/n)", m.expandedTask.Title)))
+		b.WriteString(confirmStyle.Render(fmt.Sprintf("⚠ Are you sure you want to delete task \"%s\"? (y/n)", m.expandedTask.Title)))
 		b.WriteString("\n")
 		return b.String()
 	}
 
-	// 渲染任务详情
+	// Render task details
 	if m.inputMode == ModeDetail && m.expandedTask != nil {
 		b.WriteString(m.renderTaskDetail(m.expandedTask))
 	} else {
-		// 渲染当前视图内容
+		// Render current view content
 		switch m.currentView {
 		case ViewDashboard:
 			b.WriteString(m.renderDashboardView())
@@ -560,42 +558,42 @@ func (m Model) View() string {
 		}
 	}
 
-	// 帮助信息
+	// Help information
 	if m.showHelp {
 		b.WriteString("\n")
 		b.WriteString(ui.DimStyle().Render(`
-快捷键:
-  ↑/k  上移      ↓/j  下移
-  ←/h  左标签    →/l  右标签
-  Tab  切换视图  q    退出
-  Enter 展开详情 x    完成/恢复
-  d    删除任务  1-4  按象限
-  a    显示全部  /    搜索
-  r    刷新      s    切换排序
-  ?    帮助(当前)
+Shortcuts:
+  ↑/k move up    ↓/j move down
+  ←/h left tab   →/l right tab
+  Tab switch view q quit
+  Enter expand details x complete/restore
+  d delete task  1-4 filter by quadrant
+  a show all     / search
+  r refresh      s switch sorting
+  ? help
 `))
 	}
 
-	// 状态栏
+	// Status bar
 	b.WriteString("\n")
 	b.WriteString(m.renderStatusBar())
 
 	return b.String()
 }
 
-// renderDashboardView 渲染仪表盘视图
+// renderDashboardView renders the Dashboard view
 func (m Model) renderDashboardView() string {
 	var b strings.Builder
 
-	b.WriteString(ui.ThemeTitleStyle().Render("📊 TaskBridge 仪表盘"))
+	b.WriteString(ui.ThemeTitleStyle().Render("📊 TaskBridge Dashboard"))
 	b.WriteString("\n\n")
 
-	// --- 今日任务 ---
+	// --- Today's Tasks ---
 	todayTasks := m.getTodayTasks(5)
-	b.WriteString(ui.ThemeTitleStyle().Foreground(ui.ThemePurple).Bold(true).Render("📅 今日任务"))
+	b.WriteString(ui.ThemeTitleStyle().Foreground(ui.ThemePurple).Bold(true).Render("📅 Today's Tasks"))
 	b.WriteString("\n")
 	if len(todayTasks) == 0 {
-		b.WriteString(ui.DimStyle().Render("  没有今日任务，休息一下吧 🎉\n"))
+		b.WriteString(ui.DimStyle().Render("No tasks for today, take a break 🎉\n"))
 	} else {
 		for _, t := range todayTasks {
 			prioStyle := ui.PriorityStyle(int(t.Priority))
@@ -609,23 +607,23 @@ func (m Model) renderDashboardView() string {
 	}
 	b.WriteString("\n")
 
-	// --- 逾期任务 ---
+	// --- Overdue Tasks ---
 	overdueTasks := m.getOverdueTasks()
-	b.WriteString(lipgloss.NewStyle().Foreground(ui.ThemeRed).Bold(true).Render("⚠️ 逾期任务"))
+	b.WriteString(lipgloss.NewStyle().Foreground(ui.ThemeRed).Bold(true).Render("⚠️ Overdue Tasks"))
 	b.WriteString("\n")
 	if len(overdueTasks) == 0 {
-		b.WriteString(ui.DimStyle().Render("  没有逾期任务 ✨\n"))
+		b.WriteString(ui.DimStyle().Render("No overdue tasks ✨\n"))
 	} else {
 		for _, t := range overdueTasks {
 			if t.DueDate != nil {
-				b.WriteString(overdueStyle.Render(fmt.Sprintf("  ✗ %s (截止: %s)\n", t.Title, t.DueDate.Format("01-02"))))
+				b.WriteString(overdueStyle.Render(fmt.Sprintf("✗ %s (Due: %s)\n", t.Title, t.DueDate.Format("01-02"))))
 			}
 		}
 	}
 	b.WriteString("\n")
 
-	// --- 四象限概览 ---
-	b.WriteString(ui.ThemeTitleStyle().Foreground(ui.ThemePurple).Bold(true).Render("📈 四象限概览"))
+	// --- Four Quadrants Overview ---
+	b.WriteString(ui.ThemeTitleStyle().Foreground(ui.ThemePurple).Bold(true).Render("📈 Four Quadrants Overview"))
 	b.WriteString("\n")
 
 	quadrants := []struct {
@@ -633,10 +631,10 @@ func (m Model) renderDashboardView() string {
 		label string
 		icon  string
 	}{
-		{model.QuadrantUrgentImportant, "Q1 紧急+重要", "🔥"},
-		{model.QuadrantNotUrgentImportant, "Q2 重要", "📋"},
-		{model.QuadrantUrgentNotImportant, "Q3 紧急", "⚡"},
-		{model.QuadrantNotUrgentNotImportant, "Q4 其他", "🗑️"},
+		{model.QuadrantUrgentImportant, "Q1 Urgent + Important", "🔥"},
+		{model.QuadrantNotUrgentImportant, "Q2 Important", "📋"},
+		{model.QuadrantUrgentNotImportant, "Q3 Urgent", "⚡"},
+		{model.QuadrantNotUrgentNotImportant, "Q4 Others", "🗑️"},
 	}
 
 	for _, qd := range quadrants {
@@ -660,11 +658,11 @@ func (m Model) renderDashboardView() string {
 	}
 	b.WriteString("\n")
 
-	// --- 同步状态 ---
-	b.WriteString(ui.ThemeTitleStyle().Foreground(ui.ThemePurple).Bold(true).Render("🔌 Provider 状态"))
+	// --- Provider Status ---
+	b.WriteString(ui.ThemeTitleStyle().Foreground(ui.ThemePurple).Bold(true).Render("🔌 Provider Status"))
 	b.WriteString("\n")
 	if len(m.providers) == 0 {
-		b.WriteString(ui.DimStyle().Render("  没有注册的 Provider\n"))
+		b.WriteString(ui.DimStyle().Render("No registered providers\n"))
 	} else {
 		for name, p := range m.providers {
 			var statusIcon string
@@ -676,12 +674,12 @@ func (m Model) renderDashboardView() string {
 			b.WriteString(fmt.Sprintf("  %s %s\n", statusIcon, name))
 		}
 	}
-	b.WriteString(ui.DimStyle().Render("  按 s 同步 | Tab 切换到任务列表\n"))
+	b.WriteString(ui.DimStyle().Render("Press s to sync | Tab for task list\n"))
 
 	return b.String()
 }
 
-// getTodayTasks 获取今日任务 (最多 limit 条)
+// getTodayTasks gets today's tasks (up to limit items)
 func (m Model) getTodayTasks(limit int) []model.Task {
 	var result []model.Task
 	today := time.Now().Truncate(24 * time.Hour)
@@ -701,7 +699,7 @@ func (m Model) getTodayTasks(limit int) []model.Task {
 	return result
 }
 
-// getOverdueTasks 获取逾期未完成任务
+// getOverdueTasks gets overdue and incomplete tasks
 func (m Model) getOverdueTasks() []model.Task {
 	var result []model.Task
 	now := time.Now()
@@ -716,9 +714,9 @@ func (m Model) getOverdueTasks() []model.Task {
 	return result
 }
 
-// renderTabs 渲染标签栏
+// renderTabs renders the tab bar
 func (m Model) renderTabs() string {
-	tabs := []string{"仪表盘", "任务", "四象限", "项目", "Provider", "认证"}
+	tabs := []string{"Dashboard", "Tasks", "Quadrants", "Projects", "Providers", "Auth"}
 	var renderedTabs []string
 
 	for i, tab := range tabs {
@@ -732,11 +730,11 @@ func (m Model) renderTabs() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, renderedTabs...)
 }
 
-// renderFilterBar 渲染筛选栏
+// renderFilterBar renders the filter bar
 func (m Model) renderFilterBar() string {
 	var parts []string
 
-	// 象限筛选指示
+	// Quadrant filter indicator
 	if m.quadrant > 0 {
 		qStyle := ui.QuadrantStyle(m.quadrant)
 		parts = append(parts, qStyle.Render(fmt.Sprintf("Q%d", m.quadrant)))
@@ -744,7 +742,7 @@ func (m Model) renderFilterBar() string {
 		parts = append(parts, ui.DimStyle().Render("Q*"))
 	}
 
-	// 状态筛选指示
+	// Status filter indicator
 	if m.statusFilter != "" {
 		statusStyle := lipgloss.NewStyle().Bold(true)
 		switch m.statusFilter {
@@ -758,14 +756,14 @@ func (m Model) renderFilterBar() string {
 		parts = append(parts, statusStyle.Render(m.statusFilter))
 	}
 
-	// 排序指示
-	parts = append(parts, ui.DimStyle().Render("sort:"+m.getSortName()))
+	// Sort indicator
+	parts = append(parts, ui.DimStyle().Render("sort: "+m.getSortName()))
 
 	separator := ui.DimStyle().Render(" | ")
 	return lipgloss.NewStyle().MarginBottom(1).Render(strings.Join(parts, separator))
 }
 
-// renderStatusBar 渲染增强状态栏
+// renderStatusBar renders the enhanced status bar
 func (m Model) renderStatusBar() string {
 	total := len(m.tasks)
 	completed := 0
@@ -778,7 +776,7 @@ func (m Model) renderStatusBar() string {
 		}
 	}
 
-	// 进度
+	// Progress
 	percent := 0
 	if total > 0 {
 		percent = completed * 100 / total
@@ -786,11 +784,11 @@ func (m Model) renderStatusBar() string {
 
 	bar := ui.ProgressBar(20, percent)
 
-	left := fmt.Sprintf(" %s | %d/%d 完成", m.getViewName(), completed, total)
+	left := fmt.Sprintf("%s | %d/%d completed", m.getViewName(), completed, total)
 	if overdue > 0 {
-		left += fmt.Sprintf(" | %d 逾期", overdue)
+		left += fmt.Sprintf(" | %d overdue", overdue)
 	}
-	left += " | 按 ? 查看帮助 | q 退出"
+	left += " | Press ? for help | q to exit"
 
 	right := bar
 
@@ -805,30 +803,30 @@ func (m Model) renderStatusBar() string {
 	return statusContent
 }
 
-// getViewName 获取当前视图名称
+// getViewName gets the current view name
 func (m Model) getViewName() string {
-	names := []string{"仪表盘", "任务列表", "四象限视图", "项目列表", "Provider 信息", "认证状态"}
+	names := []string{"Dashboard", "Tasks", "Quadrants", "Projects", "Providers", "Auth"}
 	return names[m.currentView]
 }
 
-// renderSearchInput 渲染搜索输入
+// renderSearchInput renders search input
 func (m Model) renderSearchInput() string {
-	return inputStyle.Render(fmt.Sprintf("🔍 搜索: %s_", m.inputBuffer))
+	return inputStyle.Render(fmt.Sprintf("🔍 Search: %s_", m.inputBuffer))
 }
 
-// renderTasksView 渲染任务视图 (使用主题卡片样式)
+// renderTasksView renders the tasks view (using theme card style)
 func (m Model) renderTasksView() string {
 	var b strings.Builder
 
-	title := "📋 任务列表"
+	title := "📋 Tasks"
 	if m.quadrant > 0 {
-		title = fmt.Sprintf("📋 象限 Q%d 任务", m.quadrant)
+		title = fmt.Sprintf("📋 Quadrant Q%d Tasks", m.quadrant)
 	}
 	b.WriteString(ui.ThemeTitleStyle().Render(title))
 	b.WriteString("\n")
 
 	if len(m.filtered) == 0 {
-		b.WriteString("  📭 没有找到任务\n")
+		b.WriteString("  📭 No tasks found\n")
 		return b.String()
 	}
 
@@ -846,13 +844,13 @@ func (m Model) renderTasksView() string {
 			if t.DueDate != nil {
 				dueDateStr = ui.DimStyle().Render(fmt.Sprintf(" [%s]", t.DueDate.Format("01-02")))
 				if t.DueDate.Before(time.Now()) {
-					overdueMark = overdueStyle.Render(" ⚠逾期")
+					overdueMark = overdueStyle.Render(" ⚠ Overdue")
 				}
 			}
 
 			subtaskStr := ""
 			if len(t.SubtaskIDs) > 0 {
-				subtaskStr = ui.DimStyle().Render(fmt.Sprintf(" [%d子任务]", len(t.SubtaskIDs)))
+				subtaskStr = ui.DimStyle().Render(fmt.Sprintf(" [%d subtasks]", len(t.SubtaskIDs)))
 			}
 
 			prioStyle := ui.PriorityStyle(int(t.Priority))
@@ -875,69 +873,69 @@ func (m Model) renderTasksView() string {
 	return b.String()
 }
 
-// renderTaskDetail 渲染任务详情
+// renderTaskDetail renders task details
 func (m Model) renderTaskDetail(t *model.Task) string {
 	var b strings.Builder
 
-	b.WriteString(ui.ThemeTitleStyle().Render("📋 任务详情"))
+	b.WriteString(ui.ThemeTitleStyle().Render("📋 Task Details"))
 	b.WriteString("\n\n")
 
 	cardStyle := ui.TaskCard(string(t.Status))
 
 	var content strings.Builder
-	content.WriteString(detailKeyStyle.Render("标题: ") + detailValStyle.Render(t.Title) + "\n")
-	content.WriteString(detailKeyStyle.Render("状态: ") + renderStatusBadge(t.Status) + "\n")
-	content.WriteString(detailKeyStyle.Render("优先级: ") + ui.PriorityStyle(int(t.Priority)).Render(fmt.Sprintf("P%d %s", t.Priority, t.Priority.Emoji())) + "\n")
-	content.WriteString(detailKeyStyle.Render("象限: ") + ui.QuadrantStyle(int(t.Quadrant)).Render(fmt.Sprintf("Q%d", t.Quadrant)) + "\n")
+	content.WriteString(detailKeyStyle.Render("Title: ") + detailValStyle.Render(t.Title) + "\n")
+	content.WriteString(detailKeyStyle.Render("Status: ") + renderStatusBadge(t.Status) + "\n")
+	content.WriteString(detailKeyStyle.Render("Priority: ") + ui.PriorityStyle(int(t.Priority)).Render(fmt.Sprintf("P%d %s", t.Priority, t.Priority.Emoji())) + "\n")
+	content.WriteString(detailKeyStyle.Render("Quadrant: ") + ui.QuadrantStyle(int(t.Quadrant)).Render(fmt.Sprintf("Q%d", t.Quadrant)) + "\n")
 
 	if t.Description != "" {
-		content.WriteString(detailKeyStyle.Render("描述: ") + detailValStyle.Render(t.Description) + "\n")
+		content.WriteString(detailKeyStyle.Render("Description: ") + detailValStyle.Render(t.Description) + "\n")
 	}
 	if t.DueDate != nil {
 		dueStr := t.DueDate.Format("2006-01-02")
 		if t.DueDate.Before(time.Now()) && t.Status != model.StatusCompleted {
-			dueStr = overdueStyle.Render(dueStr + " (已逾期)")
+			dueStr = overdueStyle.Render(dueStr + " (Overdue)")
 		}
-		content.WriteString(detailKeyStyle.Render("截止: ") + detailValStyle.Render(dueStr) + "\n")
+		content.WriteString(detailKeyStyle.Render("Due Date: ") + detailValStyle.Render(dueStr) + "\n")
 	}
 	if t.ListName != "" {
-		content.WriteString(detailKeyStyle.Render("列表: ") + detailValStyle.Render(t.ListName) + "\n")
+		content.WriteString(detailKeyStyle.Render("List: ") + detailValStyle.Render(t.ListName) + "\n")
 	}
 	if len(t.Tags) > 0 {
-		content.WriteString(detailKeyStyle.Render("标签: ") + detailValStyle.Render(strings.Join(t.Tags, ", ")) + "\n")
+		content.WriteString(detailKeyStyle.Render("Tags: ") + detailValStyle.Render(strings.Join(t.Tags, ", ")) + "\n")
 	}
 	if t.Progress > 0 {
-		content.WriteString(detailKeyStyle.Render("进度: ") + ui.ProgressBar(30, t.Progress) + fmt.Sprintf(" %d%%", t.Progress) + "\n")
+		content.WriteString(detailKeyStyle.Render("Progress: ") + ui.ProgressBar(30, t.Progress) + fmt.Sprintf(" %d%%", t.Progress) + "\n")
 	}
-	content.WriteString(detailKeyStyle.Render("来源: ") + detailValStyle.Render(string(t.Source)) + "\n")
-	content.WriteString(ui.DimStyle().Render(fmt.Sprintf("创建: %s | 更新: %s", t.CreatedAt.Format("01-02 15:04"), t.UpdatedAt.Format("01-02 15:04"))) + "\n")
+	content.WriteString(detailKeyStyle.Render("Source: ") + detailValStyle.Render(string(t.Source)) + "\n")
+	content.WriteString(ui.DimStyle().Render(fmt.Sprintf("Created: %s | Updated: %s", t.CreatedAt.Format("01-02 15:04"), t.UpdatedAt.Format("01-02 15:04"))) + "\n")
 
 	b.WriteString(cardStyle.BorderForeground(ui.ThemePurple).Render(content.String()))
 
 	b.WriteString("\n")
-	b.WriteString(ui.DimStyle().Render("  Esc 返回 | x 完成/恢复 | d 删除 | ? 帮助"))
+	b.WriteString(ui.DimStyle().Render("Esc Back | x Complete/Restore | d Delete | ? Help"))
 
 	return b.String()
 }
 
-// renderStatusBadge 渲染状态徽章
+// renderStatusBadge renders status badge
 func renderStatusBadge(status model.TaskStatus) string {
 	switch status {
 	case model.StatusCompleted:
-		return lipgloss.NewStyle().Foreground(ui.ThemeGreen).Bold(true).Render("✓ 已完成")
+		return lipgloss.NewStyle().Foreground(ui.ThemeGreen).Bold(true).Render("✓ Completed")
 	case model.StatusInProgress:
-		return lipgloss.NewStyle().Foreground(ui.ThemeOrange).Bold(true).Render("◉ 进行中")
+		return lipgloss.NewStyle().Foreground(ui.ThemeOrange).Bold(true).Render("◉ In Progress")
 	case model.StatusTodo:
-		return lipgloss.NewStyle().Foreground(ui.ThemeGray).Render("○ 待办")
+		return lipgloss.NewStyle().Foreground(ui.ThemeGray).Render("○ Todo")
 	default:
 		return detailValStyle.Render(string(status))
 	}
 }
 
-// renderQuadrantView 渲染四象限视图
+// renderQuadrantView renders four quadrants view
 func (m Model) renderQuadrantView() string {
 	var b strings.Builder
-	b.WriteString(ui.ThemeTitleStyle().Render("📊 四象限分析"))
+	b.WriteString(ui.ThemeTitleStyle().Render("📊 Four Quadrants Analysis"))
 	b.WriteString("\n\n")
 
 	quadrantData := []struct {
@@ -946,10 +944,10 @@ func (m Model) renderQuadrantView() string {
 		icon  string
 		desc  string
 	}{
-		{model.QuadrantUrgentImportant, "Q1", "🔥", "紧急且重要 (立即做)"},
-		{model.QuadrantNotUrgentImportant, "Q2", "📋", "重要不紧急 (计划做)"},
-		{model.QuadrantUrgentNotImportant, "Q3", "⚡", "紧急不重要 (授权做)"},
-		{model.QuadrantNotUrgentNotImportant, "Q4", "🗑️", "不紧急不重要 (删除/延后)"},
+		{model.QuadrantUrgentImportant, "Q1", "🔥", "Urgent & Important (Do now)"},
+		{model.QuadrantNotUrgentImportant, "Q2", "📋", "Important & Not Urgent (Plan)"},
+		{model.QuadrantUrgentNotImportant, "Q3", "⚡", "Urgent & Not Important (Delegate)"},
+		{model.QuadrantNotUrgentNotImportant, "Q4", "🗑️", "Not Urgent & Not Important (Eliminate/Postpone)"},
 	}
 
 	for _, qd := range quadrantData {
@@ -962,7 +960,7 @@ func (m Model) renderQuadrantView() string {
 
 		style := quadrantLabelStyles[int(qd.q)]
 		b.WriteString(style.Render(fmt.Sprintf("%s %s - %s", qd.icon, qd.label, qd.desc)))
-		fmt.Fprintf(&b, " [%d个任务]\n", count)
+		fmt.Fprintf(&b, " [%d tasks]\n", count)
 		b.WriteString(m.renderQuadrantTasks(qd.q))
 		b.WriteString("\n")
 	}
@@ -970,7 +968,7 @@ func (m Model) renderQuadrantView() string {
 	return b.String()
 }
 
-// renderQuadrantTasks 渲染象限任务
+// renderQuadrantTasks renders quadrant tasks
 func (m Model) renderQuadrantTasks(q model.Quadrant) string {
 	var b strings.Builder
 	count := 0
@@ -989,7 +987,7 @@ func (m Model) renderQuadrantTasks(q model.Quadrant) string {
 		}
 	}
 	if count == 0 {
-		b.WriteString("  (暂无任务)\n")
+		b.WriteString("  (No tasks)\n")
 	} else {
 		remaining := 0
 		for _, t := range m.tasks {
@@ -998,20 +996,20 @@ func (m Model) renderQuadrantTasks(q model.Quadrant) string {
 			}
 		}
 		if remaining > 5 {
-			fmt.Fprintf(&b, "  ... 还有 %d 个任务\n", remaining-5)
+			fmt.Fprintf(&b, "  ... and %d more tasks\n", remaining-5)
 		}
 	}
 	return b.String()
 }
 
-// renderProjectsView 渲染项目视图
+// renderProjectsView renders the projects view
 func (m Model) renderProjectsView() string {
 	var b strings.Builder
-	b.WriteString(ui.ThemeTitleStyle().Render("📁 项目列表 (任务列表)"))
+	b.WriteString(ui.ThemeTitleStyle().Render("📁 Projects (Task Lists)"))
 	b.WriteString("\n\n")
 
 	if len(m.taskLists) == 0 {
-		b.WriteString(ui.DimStyle().Render("没有找到项目\n"))
+		b.WriteString(ui.DimStyle().Render("No projects found\n"))
 		return b.String()
 	}
 
@@ -1033,20 +1031,20 @@ func (m Model) renderProjectsView() string {
 		} else {
 			fmt.Fprintf(&b, "%s📁 %s", prefix, list.Name)
 		}
-		b.WriteString(ui.DimStyle().Render(fmt.Sprintf(" (%d个任务)\n", taskCount)))
+		b.WriteString(ui.DimStyle().Render(fmt.Sprintf(" (%d tasks)\n", taskCount)))
 	}
 
 	return b.String()
 }
 
-// renderProvidersView 渲染 Provider 视图
+// renderProvidersView renders the providers view
 func (m Model) renderProvidersView() string {
 	var b strings.Builder
-	b.WriteString(ui.ThemeTitleStyle().Render("🔌 Provider 信息"))
+	b.WriteString(ui.ThemeTitleStyle().Render("🔌 Provider Information"))
 	b.WriteString("\n\n")
 
 	if len(m.providers) == 0 {
-		b.WriteString(ui.DimStyle().Render("没有注册的 Provider\n"))
+		b.WriteString(ui.DimStyle().Render("No registered providers\n"))
 		return b.String()
 	}
 
@@ -1058,17 +1056,17 @@ func (m Model) renderProvidersView() string {
 		}
 
 		caps := p.Capabilities()
-		status := lipgloss.NewStyle().Foreground(ui.ThemeRed).Render("❌ 未认证")
+		status := lipgloss.NewStyle().Foreground(ui.ThemeRed).Render("❌ Not Authenticated")
 		if p.IsAuthenticated() {
-			status = lipgloss.NewStyle().Foreground(ui.ThemeGreen).Render("✅ 已认证")
+			status = lipgloss.NewStyle().Foreground(ui.ThemeGreen).Render("✅ Authenticated")
 		}
 
 		fmt.Fprintf(&b, "%s%s - %s\n", prefix, name, status)
-		fmt.Fprintf(&b, "    子任务: %v | 标签: %v | 优先级: %v\n",
+		fmt.Fprintf(&b, "    Subtasks: %v | Tags: %v | Priority: %v\n",
 			boolToCheck(caps.SupportsSubtasks),
 			boolToCheck(caps.SupportsTags),
 			boolToCheck(caps.SupportsPriority))
-		fmt.Fprintf(&b, "    截止日期: %v | 提醒: %v | 进度: %v\n",
+		fmt.Fprintf(&b, "    Due Date: %v | Reminder: %v | Progress: %v\n",
 			boolToCheck(caps.SupportsDueDate),
 			boolToCheck(caps.SupportsReminder),
 			boolToCheck(caps.SupportsProgress))
@@ -1079,14 +1077,14 @@ func (m Model) renderProvidersView() string {
 	return b.String()
 }
 
-// renderAuthView 渲染认证视图
+// renderAuthView renders the auth view
 func (m Model) renderAuthView() string {
 	var b strings.Builder
-	b.WriteString(ui.ThemeTitleStyle().Render("🔐 认证状态"))
+	b.WriteString(ui.ThemeTitleStyle().Render("🔐 Authentication Status"))
 	b.WriteString("\n\n")
 
 	if len(m.providers) == 0 {
-		b.WriteString(ui.DimStyle().Render("没有注册的 Provider\n"))
+		b.WriteString(ui.DimStyle().Render("No registered providers\n"))
 		return b.String()
 	}
 
@@ -1098,21 +1096,21 @@ func (m Model) renderAuthView() string {
 		}
 
 		if p.IsAuthenticated() {
-			fmt.Fprintf(&b, "%s%s: %s\n", prefix, name, lipgloss.NewStyle().Foreground(ui.ThemeGreen).Render("✅ 已认证"))
+			fmt.Fprintf(&b, "%s%s: %s\n", prefix, name, lipgloss.NewStyle().Foreground(ui.ThemeGreen).Render("✅ Authenticated"))
 		} else {
-			fmt.Fprintf(&b, "%s%s: %s\n", prefix, name, lipgloss.NewStyle().Foreground(ui.ThemeRed).Render("❌ 未认证"))
-			fmt.Fprintf(&b, "    运行 taskbridge auth %s 进行认证\n", name)
+			fmt.Fprintf(&b, "%s%s: %s\n", prefix, name, lipgloss.NewStyle().Foreground(ui.ThemeRed).Render("❌ Not Authenticated"))
+			fmt.Fprintf(&b, "    Run taskbridge auth %s to authenticate\n", name)
 		}
 		b.WriteString("\n")
 		i++
 	}
 
-	b.WriteString(ui.DimStyle().Render("提示: 使用 taskbridge auth <provider> 命令进行认证\n"))
+	b.WriteString(ui.DimStyle().Render("Tip: Use taskbridge auth <provider> command to authenticate\n"))
 
 	return b.String()
 }
 
-// boolToCheck 布尔值转勾选符号
+// boolToCheck converts boolean to check symbol
 func boolToCheck(b bool) string {
 	if b {
 		return "✓"
@@ -1123,7 +1121,7 @@ func boolToCheck(b bool) string {
 func runTUI(cmd *cobra.Command, args []string) error {
 	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
-		return commandError("启动 TUI 失败", err)
+		return commandError("Failed to start TUI", err)
 	}
 	return nil
 }

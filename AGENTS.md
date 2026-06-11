@@ -2,7 +2,7 @@
 
 ## 技术栈
 
-- Go 1.21+
+- Go 1.25+
 - Cobra CLI
 - 文件存储为默认运行时存储，MongoDB 为可选存储
 - 统一任务模型位于 `internal/model`
@@ -26,17 +26,23 @@
 修改代码后至少运行：
 
 ```bash
-go test ./...
+task test
 ```
 
-涉及 CLI 编译或命令面时运行：
+涉及 CLI 编译、发布配置或命令面时运行：
 
 ```bash
-go build ./...
+task build
+task release:check
 ```
 
 提交前检查：
 
+```bash
+task check
+```
+
 - 新命令有单元测试或可重复的 CLI 行为测试。
 - `--dry-run` 不写本地存储，不调用远端写 API。
 - JSON 模式只写 stdout；日志和提示写 stderr。
+- GoReleaser、本地 build 和 Docker build 必须注入同一组 `pkg/buildinfo` ldflags。

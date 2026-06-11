@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/yeisme/taskbridge/internal/clioutput"
+	pkgconfig "github.com/yeisme/taskbridge/pkg/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -15,41 +17,41 @@ var (
 	configFormat        string
 )
 
-// configCmd 配置命令
+// configCmd configuration command
 var configCmd = &cobra.Command{
 	Use:   "config",
-	Short: "配置管理",
-	Long: `管理 TaskBridge 运行配置（已迁移到环境变量和命令行参数）。
+	Short: "Configuration management",
+	Long: `Manage TaskBridge runtime configuration. Configuration files are deprecated; prefer environment variables and command-line flags.
 
-子命令:
-  show     显示当前配置
-  set      设置配置项（已弃用）
-  get      获取配置项
-  init     初始化配置文件（已弃用）
-  validate 验证配置
+Subcommands:
+  show     Show current configuration
+  set      Set configuration items (deprecated)
+  get      Get configuration items
+  init     Initialize a configuration file (deprecated)
+  validate Validate configuration
 
-示例:
+Examples:
   taskbridge config show
   taskbridge config set storage.path ./mydata
   taskbridge config get providers.google.enabled
   taskbridge config init`,
 }
 
-// configShowCmd 显示配置
+// configShowCmd shows configuration
 var configShowCmd = &cobra.Command{
 	Use:   "show",
-	Short: "显示当前配置",
-	Long:  `显示当前加载的配置信息`,
+	Short: "Show current configuration",
+	Long:  `Display currently loaded configuration information`,
 	RunE:  runConfigShow,
 }
 
-// configSetCmd 设置配置
+// configSetCmd set configuration
 var configSetCmd = &cobra.Command{
 	Use:   "set <key> <value>",
-	Short: "设置配置项",
-	Long: `设置指定的配置项。
+	Short: "Set configuration items",
+	Long: `Set the specified configuration item.
 
-示例:
+Example:
   taskbridge config set storage.path ./mydata
   taskbridge config set providers.google.enabled true
   taskbridge config set sync.interval 10m`,
@@ -57,32 +59,32 @@ var configSetCmd = &cobra.Command{
 	RunE: runConfigSet,
 }
 
-// configGetCmd 获取配置
+// configGetCmd Get configuration
 var configGetCmd = &cobra.Command{
 	Use:   "get <key>",
-	Short: "获取配置项",
-	Long: `获取指定配置项的值。
+	Short: "Get configuration items",
+	Long: `Get the value of the specified configuration item.
 
-示例:
+Example:
   taskbridge config get storage.path
   taskbridge config get providers.google.enabled`,
 	Args: cobra.ExactArgs(1),
 	RunE: runConfigGet,
 }
 
-// configInitCmd 初始化配置
+// configInitCmd initializes the configuration
 var configInitCmd = &cobra.Command{
 	Use:   "init",
-	Short: "初始化配置文件",
-	Long:  `在当前目录或指定位置创建默认配置文件`,
+	Short: "Initialize configuration file",
+	Long:  `Create a default configuration file in the current directory or specified location. Deprecated: use environment variables or flags instead`,
 	RunE:  runConfigInit,
 }
 
-// configValidateCmd 验证配置
+// configValidateCmd Verify configuration
 var configValidateCmd = &cobra.Command{
 	Use:   "validate",
-	Short: "验证配置",
-	Long:  `验证当前配置是否有效`,
+	Short: "Verify configuration",
+	Long:  `Verify that the current configuration is valid`,
 	RunE:  runConfigValidate,
 }
 
@@ -94,41 +96,103 @@ func init() {
 	configCmd.AddCommand(configInitCmd)
 	configCmd.AddCommand(configValidateCmd)
 
-	configShowCmd.Flags().BoolVar(&configShowSensitive, "sensitive", false, "显示敏感信息")
-	configShowCmd.Flags().StringVarP(&configFormat, "format", "f", "yaml", "输出格式 (yaml, json)")
+	configShowCmd.Flags().BoolVar(&configShowSensitive, "sensitive", false, "Show sensitive information")
+	configShowCmd.Flags().StringVarP(&configFormat, "format", "f", "yaml", "Output format (yaml, json)")
 
-	configInitCmd.Flags().StringVar(&cfgFile, "output", "", "配置文件输出路径")
+	configInitCmd.Flags().StringVar(&cfgFile, "output", "", "Configuration file output path")
+}
+
+func buildConfigProjection(current *pkgconfig.Config) clioutput.Projection {
+	p := clioutput.New("config.show")
+	p.Summary = "TaskBridge configuration loaded."
+	p.Facts["source"] = "default+env+flags"
+	if current != nil {
+		p.Facts["storage_type"] = current.Storage.Type
+		p.Facts["storage_path"] = current.Storage.Path
+		p.Facts["log_level"] = current.App.LogLevel
+	}
+	p.Data = current
+	return p
+}
+
+func buildConfigGetProjection(key string, value any) clioutput.Projection {
+	projection := clioutput.New("config.get")
+	valueText := configValueText(value)
+	if isSensitiveConfigKey(key) {
+		valueText = clioutput.RedactedValue
+		value = clioutput.RedactedValue
+	}
+	projection.Summary = "Configuration value loaded."
+	projection.Facts["key"] = key
+	projection.Facts["value"] = valueText
+	projection.Data = map[string]any{"key": key, "value": value}
+	return projection
+}
+
+func renderConfigGet(projection clioutput.Projection) string {
+	return fmt.Sprintf("Configuration value\n\nKey: %v\nValue: %v\n", projection.Facts["key"], projection.Facts["value"])
+}
+
+func configValueText(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case fmt.Stringer:
+		return v.String()
+	case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		return fmt.Sprint(v)
+	default:
+		data, err := yaml.Marshal(value)
+		if err != nil {
+			return fmt.Sprint(value)
+		}
+		return strings.TrimSpace(string(data))
+	}
+}
+
+func isSensitiveConfigKey(key string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	for _, needle := range []string{"token", "secret", "password", "authorization", "cookie"} {
+		if strings.Contains(normalized, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func runConfigShow(cmd *cobra.Command, args []string) error {
-	switch configFormat {
+	projection := buildConfigProjection(cfg)
+	if globalProjectionModeRequested() {
+		return printProjection(configFormat, projection, nil)
+	}
+
+	switch strings.ToLower(strings.TrimSpace(configFormat)) {
 	case "json":
 		data, err := json.MarshalIndent(cfg, "", "  ")
 		if err != nil {
-			return commandError("序列化配置失败", err)
+			return commandError("Serialization configuration failed", err)
 		}
 		fmt.Println(string(data))
 	default:
 		data, err := yaml.Marshal(cfg)
 		if err != nil {
-			return commandError("序列化配置失败", err)
+			return commandError("Serialization configuration failed", err)
 		}
 		fmt.Println(string(data))
+		fmt.Fprintln(os.Stderr, "Configuration source: default value + environment variable + command line parameter (config.yaml is deprecated)")
 	}
-
-	fmt.Println("\n配置来源: 默认值 + 环境变量 + 命令行参数（config.yaml 已弃用）")
 	return nil
 }
 
 func runConfigSet(cmd *cobra.Command, args []string) error {
 	_ = args
-	return usageError("`taskbridge config set` 已弃用。请改用环境变量或命令行参数。示例: TASKBRIDGE_STORAGE_PATH=./data taskbridge list")
+	return usageError("`taskbridge config set` is deprecated. Please use environment variables or command line parameters instead. Example: TASKBRIDGE_STORAGE_PATH=./data taskbridge list")
 }
 
 func runConfigGet(cmd *cobra.Command, args []string) error {
 	key := args[0]
 
-	// 简化实现，根据 key 获取值
+	//Simplify the implementation and get the value based on key
 	var value interface{}
 	parts := strings.Split(key, ".")
 
@@ -227,32 +291,67 @@ func runConfigGet(cmd *cobra.Command, args []string) error {
 			value = cfg.App
 		}
 	default:
-		return usageError("未知的配置项: " + key)
+		return usageError("Unknown configuration item:" + key)
 	}
 
-	// 输出值
-	data, err := yaml.Marshal(value)
-	if err != nil {
-		fmt.Printf("%v\n", value)
-	} else {
-		fmt.Printf("%s", string(data))
+	projection := buildConfigGetProjection(key, value)
+	if outputJSON || outputAgent || outputEvents || outputExplain {
+		return printProjection("text", projection, nil)
 	}
+	fmt.Fprint(os.Stdout, renderConfigGet(projection))
 	return nil
 }
 
 func runConfigInit(cmd *cobra.Command, args []string) error {
 	_ = cmd
 	_ = args
-	return usageError("`taskbridge config init` 已弃用。请改用环境变量或命令行参数。示例: TASKBRIDGE_PROVIDERS=microsoft,todoist taskbridge sync status")
+	return usageError("`taskbridge config init` is deprecated. Please use environment variables or command line parameters instead. Example: TASKBRIDGE_PROVIDERS=microsoft,todoist taskbridge sync status")
+}
+
+func buildConfigValidateProjection(issues []pkgconfig.ValidationIssue) clioutput.Projection {
+	p := clioutput.New("config.validate")
+	errorCount, warningCount := 0, 0
+	for _, issue := range issues {
+		switch issue.Level {
+		case pkgconfig.ValidationLevelError:
+			errorCount++
+		case pkgconfig.ValidationLevelWarning:
+			warningCount++
+		}
+	}
+	p.Summary = "Configuration validation completed."
+	p.Facts["errors"] = errorCount
+	p.Facts["warnings"] = warningCount
+	p.Facts["issues"] = len(issues)
+	p.Data = map[string]any{"issues": issues, "errors": errorCount, "warnings": warningCount}
+	if errorCount > 0 {
+		p.Status = clioutput.StatusFailed
+		p.Error = &clioutput.OutputError{Code: "config_invalid", Message: "Configuration validation failed", Suggestion: "Fix the reported configuration errors and run taskbridge config validate again."}
+	} else if warningCount > 0 {
+		p.Status = clioutput.StatusPartial
+	}
+	return p
 }
 
 func runConfigValidate(cmd *cobra.Command, args []string) error {
 	_ = cmd
 	_ = args
 
-	exitCode := writeValidationReport(os.Stdout, cfg.Validate())
+	issues := cfg.Validate()
+	projection := buildConfigValidateProjection(issues)
+	if globalProjectionModeRequested() {
+		if err := printProjection("text", projection, nil); err != nil {
+			return err
+		}
+		if projection.Status == clioutput.StatusFailed {
+			return &CLIError{Message: "Configuration verification failed", ExitCode: 1}
+		}
+		return nil
+	}
+
+	exitCode := writeValidationReport(os.Stdout, issues)
 	if exitCode != 0 {
-		return &CLIError{Message: "配置验证失败", ExitCode: exitCode}
+		return &CLIError{Message: "Configuration verification failed", ExitCode: exitCode}
 	}
 	return nil
 }

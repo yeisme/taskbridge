@@ -30,7 +30,7 @@ func TestAgentPlanNonDryRunCreatesProjectDraftAndPlan(t *testing.T) {
 	agentRequestID = "req_test"
 
 	output := captureStdout(t, func() {
-		if err := runAgentPlan(nil, []string{"学习 OpenClaw"}); err != nil {
+		if err := runAgentPlan(nil, []string{"Learn OpenClaw"}); err != nil {
 			t.Fatalf("runAgentPlan: %v", err)
 		}
 	})

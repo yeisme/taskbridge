@@ -3,8 +3,10 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/yeisme/taskbridge/pkg/config"
 	"github.com/yeisme/taskbridge/pkg/paths"
 )
 
@@ -46,5 +48,41 @@ func TestAuthRefreshBrokenStaticTokenStoreReturnsError(t *testing.T) {
 	})
 	if stdout == "" {
 		t.Fatalf("expected token read error on stdout")
+	}
+}
+
+func TestRenderAuthStatusUsesEnglishFeishuAndStatusIcons(t *testing.T) {
+	t.Setenv("TASKBRIDGE_HOME", t.TempDir())
+	oldCfg := cfg
+	cfg = config.DefaultConfig()
+	defer func() { cfg = oldCfg }()
+
+	out := renderAuthStatus(buildAuthStatusProjection())
+	if !strings.Contains(out, "Feishu Tasks") {
+		t.Fatalf("auth status should use English Feishu display name:\n%s", out)
+	}
+	if strings.Contains(out, "飞书任务") || strings.Contains(out, "Feishu mission") {
+		t.Fatalf("auth status should not use old Feishu labels:\n%s", out)
+	}
+	if !strings.Contains(out, "⚪ Not configured") {
+		t.Fatalf("auth status should decorate status with an icon:\n%s", out)
+	}
+}
+
+func TestAuthLoginRejectsMachineModes(t *testing.T) {
+	oldJSON := outputJSON
+	outputJSON = true
+	t.Cleanup(func() { outputJSON = oldJSON })
+	if err := runAuthLogin(nil, []string{"google"}); err == nil || !strings.Contains(err.Error(), "--json") {
+		t.Fatalf("auth login should reject machine modes before interactive output, got %v", err)
+	}
+}
+
+func TestAuthRefreshRejectsMachineModes(t *testing.T) {
+	oldAgent := outputAgent
+	outputAgent = true
+	t.Cleanup(func() { outputAgent = oldAgent })
+	if err := runAuthRefresh(nil, []string{"google"}); err == nil || !strings.Contains(err.Error(), "--agent") {
+		t.Fatalf("auth refresh should reject machine modes before progress output, got %v", err)
 	}
 }

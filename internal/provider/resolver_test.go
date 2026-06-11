@@ -32,3 +32,16 @@ func TestResolveProviderNameAliases(t *testing.T) {
 		}
 	}
 }
+
+func TestFeishuDefinitionUsesEnglishDisplayName(t *testing.T) {
+	def, ok := GetProviderDefinition("feishu")
+	if !ok {
+		t.Fatal("feishu definition missing")
+	}
+	if def.DisplayName != "Feishu Tasks" {
+		t.Fatalf("Feishu DisplayName = %q, want Feishu Tasks", def.DisplayName)
+	}
+	if def.Description != "Feishu task management" {
+		t.Fatalf("Feishu Description = %q, want English description", def.Description)
+	}
+}

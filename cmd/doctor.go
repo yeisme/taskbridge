@@ -3,11 +3,14 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/yeisme/taskbridge/internal/clioutput"
 	"github.com/yeisme/taskbridge/internal/controlplane"
 	"github.com/yeisme/taskbridge/internal/project"
+	"github.com/yeisme/taskbridge/pkg/ui"
 )
 
 var (
@@ -17,13 +20,13 @@ var (
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
-	Short: "检查 TaskBridge 本地环境",
+	Short: "Check the TaskBridge local environment",
 	RunE:  runDoctor,
 }
 
 var quickstartCmd = &cobra.Command{
 	Use:   "quickstart",
-	Short: "根据当前状态给出下一条建议命令",
+	Short: "Gives the next suggested command based on the current status",
 	RunE:  runQuickstart,
 }
 
@@ -31,24 +34,14 @@ func init() {
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(quickstartCmd)
 
-	doctorCmd.Flags().StringVarP(&doctorFormat, "format", "f", "text", "输出格式 (text, json)")
-	quickstartCmd.Flags().StringVarP(&quickstartFormat, "format", "f", "text", "输出格式 (text, json)")
+	doctorCmd.Flags().StringVarP(&doctorFormat, "format", "f", "text", "Output format (text, json)")
+	quickstartCmd.Flags().StringVarP(&quickstartFormat, "format", "f", "text", "Output format (text, json)")
 }
 
 func runDoctor(_ *cobra.Command, _ []string) error {
 	result := buildDoctorResult()
-	return printStructured(doctorFormat, result, func() {
-		fmt.Println("TaskBridge doctor")
-		for _, check := range result.Checks {
-			fmt.Printf("- [%s] %s: %s\n", check.Status, check.ID, check.Message)
-			if check.NextAction != "" {
-				fmt.Printf("  next: %s\n", check.NextAction)
-			}
-		}
-		if result.NextAction != "" {
-			fmt.Printf("\n下一步: %s\n", result.NextAction)
-		}
-	})
+	projection := buildDoctorProjection(result)
+	return printProjectionWithLegacyJSON(doctorFormat, result, projection, func() { fmt.Print(renderDoctorResult(result, projection)) })
 }
 
 func runQuickstart(_ *cobra.Command, _ []string) error {
@@ -59,14 +52,83 @@ func runQuickstart(_ *cobra.Command, _ []string) error {
 		"next_action": result.NextAction,
 		"checks":      result.Checks,
 	}
-	return printStructured(quickstartFormat, payload, func() {
-		if result.NextAction == "" {
-			fmt.Println("TaskBridge 已可用。建议运行: taskbridge today")
-			return
+	projection := buildQuickstartProjection(result, payload)
+	return printProjectionWithLegacyJSON(quickstartFormat, payload, projection, func() { fmt.Print(renderQuickstartResult(result, projection)) })
+}
+
+func buildDoctorProjection(result controlplane.DoctorResult) clioutput.Projection {
+	p := clioutput.New("doctor.check")
+	p.Summary = "TaskBridge doctor completed."
+	p.Status = cliStatusFromString(result.Status)
+	p.Facts["checks"] = len(result.Checks)
+	ok, warnings, errors := 0, 0, 0
+	for _, check := range result.Checks {
+		switch check.Status {
+		case "ok":
+			ok++
+		case "warning":
+			warnings++
+		case "error":
+			errors++
 		}
-		fmt.Println("建议下一步:")
-		fmt.Println(result.NextAction)
-	})
+		if check.Status != "ok" {
+			p.Risks = append(p.Risks, check.ID+": "+check.Message)
+		}
+	}
+	p.Facts["ok"] = ok
+	p.Facts["warnings"] = warnings
+	p.Facts["errors"] = errors
+	if result.NextAction != "" {
+		p.Actions = append(p.Actions, clioutput.Action{Name: "next", Command: result.NextAction})
+	}
+	p.Data = result
+	return p
+}
+
+func buildQuickstartProjection(result controlplane.DoctorResult, payload map[string]interface{}) clioutput.Projection {
+	p := clioutput.New("doctor.quickstart")
+	p.Summary = "Quickstart recommendation generated."
+	p.Status = cliStatusFromString(result.Status)
+	p.Facts["checks"] = len(result.Checks)
+	if result.NextAction != "" {
+		p.Actions = append(p.Actions, clioutput.Action{Name: "next", Command: result.NextAction})
+	}
+	p.Data = payload
+	return p
+}
+
+func renderDoctorResult(result controlplane.DoctorResult, projection clioutput.Projection) string {
+	var b strings.Builder
+	b.WriteString("Doctor checks\n\n")
+	b.WriteString(renderProjectionFacts(projection))
+	if len(result.Checks) == 0 {
+		b.WriteString("\nNo checks were run.\n")
+		return renderRecommendedAction(b.String(), projection)
+	}
+	b.WriteString("\nCheck table\n")
+	table := ui.NewTable("Check", "Status", "Message", "Next action")
+	for _, check := range result.Checks {
+		table.AddRow(check.ID, check.Status, check.Message, check.NextAction)
+	}
+	b.WriteString(table.Render())
+	b.WriteString("\n")
+	return renderRecommendedAction(b.String(), projection)
+}
+
+func renderQuickstartResult(result controlplane.DoctorResult, projection clioutput.Projection) string {
+	var b strings.Builder
+	b.WriteString("Quickstart recommendation\n\n")
+	b.WriteString(renderProjectionFacts(projection))
+	if len(result.Checks) > 0 {
+		b.WriteString("\nChecks\n")
+		table := ui.NewTable("Check", "Status", "Next action")
+		for _, check := range result.Checks {
+			table.AddRow(check.ID, check.Status, check.NextAction)
+		}
+		b.WriteString(table.Render())
+		b.WriteString("\n")
+	}
+	return renderRecommendedAction(b.String(), projection)
 }
 
 func buildDoctorResult() controlplane.DoctorResult {
@@ -82,16 +144,16 @@ func buildDoctorResult() controlplane.DoctorResult {
 	}
 
 	if cfg == nil {
-		add(controlplane.DoctorCheck{ID: "config", Status: "error", Message: "配置未初始化", NextAction: "重新运行 taskbridge"})
-		return controlplane.DoctorResult{Schema: controlplane.SchemaDoctor, Status: "error", Checks: checks, NextAction: "重新运行 taskbridge"}
+		add(controlplane.DoctorCheck{ID: "config", Status: "error", Message: "Configuration not initialized", NextAction: "Rerun taskbridge"})
+		return controlplane.DoctorResult{Schema: controlplane.SchemaDoctor, Status: "error", Checks: checks, NextAction: "Rerun taskbridge"}
 	}
 
 	if cfg.Storage.Path == "" {
-		add(controlplane.DoctorCheck{ID: "storage_path", Status: "error", Message: "storage path 为空", NextAction: "设置 TASKBRIDGE_STORAGE_PATH"})
+		add(controlplane.DoctorCheck{ID: "storage_path", Status: "error", Message: "storage path is empty", NextAction: "Set TASKBRIDGE_STORAGE_PATH"})
 	} else if err := os.MkdirAll(cfg.Storage.Path, 0o755); err != nil {
-		add(controlplane.DoctorCheck{ID: "storage_path", Status: "error", Message: err.Error(), NextAction: "检查 storage path 权限"})
+		add(controlplane.DoctorCheck{ID: "storage_path", Status: "error", Message: err.Error(), NextAction: "Check storage path permissions"})
 	} else if file, err := os.CreateTemp(cfg.Storage.Path, ".taskbridge-write-check-*"); err != nil {
-		add(controlplane.DoctorCheck{ID: "storage_path", Status: "error", Message: err.Error(), NextAction: "检查 storage path 写权限"})
+		add(controlplane.DoctorCheck{ID: "storage_path", Status: "error", Message: err.Error(), NextAction: "Check storage path write permission"})
 	} else {
 		name := file.Name()
 		_ = file.Close()
@@ -100,7 +162,7 @@ func buildDoctorResult() controlplane.DoctorResult {
 	}
 
 	if _, err := project.NewFileStore(cfg.Storage.Path); err != nil {
-		add(controlplane.DoctorCheck{ID: "project_store", Status: "warning", Message: err.Error(), NextAction: "检查 projects.json 或 storage path"})
+		add(controlplane.DoctorCheck{ID: "project_store", Status: "warning", Message: err.Error(), NextAction: "Check projects.json or storage path"})
 	} else {
 		add(controlplane.DoctorCheck{ID: "project_store", Status: "ok", Message: "project store is readable"})
 	}

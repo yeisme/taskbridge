@@ -7,35 +7,38 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/yeisme/taskbridge/internal/auth"
+	"github.com/yeisme/taskbridge/internal/clioutput"
 	"github.com/yeisme/taskbridge/internal/loader"
 	syncengine "github.com/yeisme/taskbridge/internal/sync"
+	"github.com/yeisme/taskbridge/pkg/ui"
 )
 
-// serveCmd 后台服务命令
+// serveCmd background service command
 var serveCmd = &cobra.Command{
 	Use:   "serve",
-	Short: "启动后台服务",
-	Long: `启动 TaskBridge 后台服务。
+	Short: "Start background service",
+	Long: `Start the TaskBridge background service.
 
-功能:
-  - Token 自动刷新（防止过期）
-  - 定时同步任务
-  - 健康检查（可选）
+Functions:
+  - Automatically refresh tokens before expiration
+  - Run scheduled synchronization tasks when enabled
+  - Serve an optional health endpoint
 
-示例:
-  taskbridge serve                    # 启动服务（默认配置）
-  taskbridge serve --check-interval 2m # 设置检查间隔为 2 分钟`,
+Examples:
+  taskbridge serve
+  taskbridge serve --check-interval 2m`,
 	RunE: runServe,
 }
 
 var (
-	// 服务配置
+	// Service configuration.
 	serveCheckInterval     string
 	serveEnableSync        bool
 	serveSyncInterval      string
@@ -48,38 +51,40 @@ var (
 
 func init() {
 	rootCmd.AddCommand(serveCmd)
+	serveCmd.Flags().BoolVar(&serveEnableAutoRefresh, "enable-auto-refresh", true, "Enable automatic token refresh")
+	serveCmd.Flags().StringVar(&serveCheckInterval, "check-interval", "1m", "Token check interval")
+	serveCmd.Flags().StringVar(&serveRefreshBuffer, "refresh-buffer", "5m", "Refresh buffer before token expiration")
 
-	// Token 刷新配置
-	serveCmd.Flags().BoolVar(&serveEnableAutoRefresh, "enable-auto-refresh", true, "启用 Token 自动刷新")
-	serveCmd.Flags().StringVar(&serveCheckInterval, "check-interval", "1m", "Token 检查间隔")
-	serveCmd.Flags().StringVar(&serveRefreshBuffer, "refresh-buffer", "5m", "刷新提前量（Token 过期前多久刷新）")
+	// Sync configuration.
+	serveCmd.Flags().BoolVar(&serveEnableSync, "enable-sync", false, "Enable scheduled synchronization")
+	serveCmd.Flags().StringVar(&serveSyncInterval, "sync-interval", "5m", "Synchronization interval")
+	serveCmd.Flags().BoolVar(&serveSyncOnStart, "sync-on-start", true, "Run one synchronization immediately after service startup")
 
-	// 同步配置
-	serveCmd.Flags().BoolVar(&serveEnableSync, "enable-sync", false, "启用定时同步")
-	serveCmd.Flags().StringVar(&serveSyncInterval, "sync-interval", "5m", "同步间隔")
-	serveCmd.Flags().BoolVar(&serveSyncOnStart, "sync-on-start", true, "启动服务后立即执行一次同步")
-
-	// 健康检查配置
-	serveCmd.Flags().BoolVar(&serveEnableHealth, "enable-health", false, "启用健康检查端点")
-	serveCmd.Flags().IntVar(&serveHealthPort, "health-port", 8081, "健康检查端口")
+	// Health check configuration.
+	serveCmd.Flags().BoolVar(&serveEnableHealth, "enable-health", false, "Enable health endpoint")
+	serveCmd.Flags().IntVar(&serveHealthPort, "health-port", 8081, "Health endpoint port")
 }
 
-// runServe 执行后台服务
+// runServe executes background services
 func runServe(cmd *cobra.Command, args []string) error {
-	fmt.Println("🚀 TaskBridge 后台服务启动中...")
+	if resolveOutputFormat("text") != "text" || IsQuietMode() {
+		return usageError("serve does not support machine output; omit --json, --agent, --events, --explain, and --quiet")
+	}
 
-	// 解析配置
+	printServeSummary("serve.start", "TaskBridge background service is starting.", nil)
+
+	//Parse configuration
 	checkInterval, err := time.ParseDuration(serveCheckInterval)
 	if err != nil {
-		return commandError("无效的检查间隔", err)
+		return commandError("Invalid check interval", err)
 	}
 
 	refreshBuffer, err := time.ParseDuration(serveRefreshBuffer)
 	if err != nil {
-		return commandError("无效的刷新提前量", err)
+		return commandError("Invalid refresh buffer", err)
 	}
 
-	// 创建 Token 管理器
+	// Create a token manager.
 	tokenManager := auth.NewTokenManager(auth.TokenManagerConfig{
 		CheckInterval: checkInterval,
 		RefreshBuffer: refreshBuffer,
@@ -88,18 +93,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 	})
 
 	loadResult := loadProvidersWithStatus("")
-	registerProviders(tokenManager, loadResult)
-
-	// 设置刷新回调
+	registerProviders(tokenManager, loadResult) //Set refresh callback
 	tokenManager.SetOnRefreshCallback(func(provider string, err error) {
 		if err != nil {
-			fmt.Printf("❌ %s Token 刷新失败: %v\n", provider, err)
+			fmt.Printf("Token refresh failed for %s: %v\n", provider, err)
 		} else {
-			fmt.Printf("✅ %s Token 刷新成功\n", provider)
+			fmt.Printf("Token refreshed for %s\n", provider)
 		}
 	})
 
-	// 创建上下文
+	// Create context.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -107,12 +110,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if serveEnableSync && len(loadResult.Providers) > 0 {
 		syncInterval, err := time.ParseDuration(serveSyncInterval)
 		if err != nil {
-			return commandError("无效的同步间隔", err)
+			return commandError("Invalid synchronization interval", err)
 		}
 
 		store, cleanup, err := getStore()
 		if err != nil {
-			return commandError("初始化同步存储失败", err)
+			return commandError("Failed to initialize sync storage", err)
 		}
 		defer cleanup()
 
@@ -126,95 +129,105 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}, loadResult.Providers, store)
 	}
 
-	// 启动 Token 自动刷新
+	// Start automatic token refresh.
 	if serveEnableAutoRefresh {
 		if err := tokenManager.Start(ctx); err != nil {
-			return commandError("启动 Token 管理器失败", err)
+			return commandError("Failed to start token manager", err)
 		}
-		fmt.Printf("✅ Token 自动刷新已启用 (检查间隔: %s, 刷新提前量: %s)\n", checkInterval, refreshBuffer)
+		fmt.Printf("Token auto-refresh enabled (check interval: %s, refresh buffer: %s)\n", checkInterval, refreshBuffer)
 	}
 
-	// 显示当前 Token 状态
+	// Show current token status.
 	printTokenStatus(tokenManager)
 
 	if scheduler != nil {
 		if err := scheduler.Start(ctx); err != nil {
-			return commandError("启动定时同步失败", err)
+			return commandError("Failed to start scheduled synchronization", err)
 		}
-		fmt.Printf("🔄 定时同步已启用 (间隔: %s)\n", serveSyncInterval)
+		fmt.Printf("Scheduled synchronization enabled (interval: %s)\n", serveSyncInterval)
 		if serveSyncOnStart {
 			if result, err := triggerInitialSync(ctx, scheduler); err != nil {
-				fmt.Printf("⚠️ 启动时首次同步失败: %v\n", err)
+				fmt.Printf("Initial sync failed at startup: %v\n", err)
 			} else {
-				fmt.Printf("✅ 启动时首次同步完成 (pulled=%d, pushed=%d, errors=%d)\n", result.Pulled, result.Pushed, len(result.Errors))
+				fmt.Printf("Initial sync completed at startup (pulled=%d, pushed=%d, errors=%d)\n", result.Pulled, result.Pushed, len(result.Errors))
 			}
 		}
 	} else if serveEnableSync {
-		fmt.Println("⚠️ 未找到可用已认证 Provider，定时同步未启动")
+		fmt.Println("No authenticated provider is available; scheduled synchronization was not started.")
 	}
 
-	// 启动健康检查（如果启用）
+	// Start health checks when enabled.
 	if serveEnableHealth {
 		go startHealthCheck(ctx, serveHealthPort, func() *HealthResponse {
 			return buildHealthResponse(tokenManager, loadResult, scheduler, serveSyncInterval)
 		})
 	}
 
-	fmt.Println("\n📋 服务已启动，按 Ctrl+C 停止")
-	fmt.Println("─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─")
+	fmt.Println("\nService started. Press Ctrl+C to stop it.")
+	fmt.Println("────────────────────────────────────────")
 
-	// 等待中断信号
+	// Wait for an interrupt signal.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	<-sigChan
-	fmt.Println("\n\n🛑 正在停止服务...")
+	fmt.Println("\nStopping service...")
 
-	// 停止 Token 管理器
+	// Stop the token manager.
 	tokenManager.Stop()
 	if scheduler != nil {
 		_ = scheduler.Stop()
 	}
 
-	fmt.Println("👋 服务已停止")
+	printServeSummary("serve.stop", "TaskBridge background service stopped.", nil)
 	return nil
 }
 
-// registerProviders 注册所有已成功加载的 Provider，并输出所有 Provider 状态。
+// registerProviders registers successfully loaded providers and prints provider status.
 func registerProviders(tm *auth.TokenManager, result *loader.ProviderLoadResult) {
 	for name, status := range result.Statuses {
 		if providerImpl, ok := result.Providers[name]; ok {
 			tm.RegisterProvider(providerImpl)
-			fmt.Printf("✅ 已注册 Provider: %s\n", providerImpl.DisplayName())
+			fmt.Printf("Registered provider: %s\n", providerImpl.DisplayName())
 			continue
 		}
 		if status != nil && status.Error != "" {
-			fmt.Printf("⚠️ %s Provider 未就绪: %s\n", name, status.Error)
+			fmt.Printf("Provider %s is not ready: %s\n", name, status.Error)
 		} else {
-			fmt.Printf("⚠️ %s Provider 未就绪\n", name)
+			fmt.Printf("Provider %s is not ready\n", name)
 		}
 	}
 }
 
-// printTokenStatus 打印 Token 状态
+// printTokenStatus prints token status.
 func printTokenStatus(tm *auth.TokenManager) {
-	fmt.Println("\n📊 Token 状态:")
-	fmt.Println("┌────────────┬─────────┬─────────────────────┬──────────────┐")
-	fmt.Println("│ Provider   │ 状态    │ 过期时间            │ 剩余时间     │")
-	fmt.Println("├────────────┼─────────┼─────────────────────┼──────────────┤")
+	fmt.Println("\nToken status")
+	table := ui.NewSimpleTable(
+		ui.Column{Header: "Provider", AlignLeft: true},
+		ui.Column{Header: "Status", AlignLeft: true},
+		ui.Column{Header: "Expires", AlignLeft: true},
+		ui.Column{Header: "Remaining", AlignLeft: true},
+	)
 
 	status := tm.GetStatus()
-	for name, info := range status {
-		statusIcon := "❌ 未认证"
+	names := make([]string, 0, len(status))
+	for name := range status {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		info := status[name]
+		statusText := "not authenticated"
 		if info.HasToken {
 			if info.IsValid {
 				if info.NeedsRefresh {
-					statusIcon = "⚠️ 需刷新"
+					statusText = "needs refresh"
 				} else {
-					statusIcon = "✅ 有效"
+					statusText = "valid"
 				}
 			} else {
-				statusIcon = "❌ 已过期"
+				statusText = "expired"
 			}
 		}
 
@@ -225,9 +238,9 @@ func printTokenStatus(tm *auth.TokenManager) {
 			timeLeft = info.TimeUntilExpiry
 		}
 
-		fmt.Printf("│ %-10s │ %-7s │ %-19s │ %-12s │\n", name, statusIcon, expiresAt, timeLeft)
+		table.AddRow(name, statusText, expiresAt, timeLeft)
 	}
-	fmt.Println("└────────────┴─────────┴─────────────────────┴──────────────┘")
+	fmt.Print(table.Render())
 }
 
 type ProviderHealthStatus struct {
@@ -416,9 +429,9 @@ func triggerInitialSync(ctx context.Context, scheduler schedulerTrigger) (*synce
 	return scheduler.Trigger(ctx)
 }
 
-// startHealthCheck 启动健康检查
+// startHealthCheck starts the health endpoint.
 func startHealthCheck(ctx context.Context, port int, snapshot func() *HealthResponse) {
-	fmt.Printf("🏥 健康检查端点: http://localhost:%d/health\n", port)
+	fmt.Printf("Health endpoint: http://localhost:%d/health\n", port)
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
@@ -433,6 +446,15 @@ func startHealthCheck(ctx context.Context, port int, snapshot func() *HealthResp
 	}()
 
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		fmt.Printf("❌ 健康检查服务失败: %v\n", err)
+		fmt.Printf("Health endpoint failed: %v\n", err)
 	}
+}
+
+func printServeSummary(command, summary string, facts map[string]any) {
+	p := clioutput.New(command)
+	p.Summary = summary
+	for key, value := range facts {
+		p.Facts[key] = value
+	}
+	fmt.Print(clioutput.RenderSummary(p))
 }

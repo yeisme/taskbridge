@@ -2,12 +2,12 @@ package controlplane
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/yeisme/taskbridge/internal/model"
 	"github.com/yeisme/taskbridge/internal/project"
-	projectstore "github.com/yeisme/taskbridge/internal/project"
 	"github.com/yeisme/taskbridge/internal/storage/filestore"
 )
 
@@ -17,7 +17,7 @@ func TestTodayClassifiesTasksAndProjectNext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("filestore.New: %v", err)
 	}
-	projectStore, err := projectstore.NewFileStore(t.TempDir())
+	projectStore, err := project.NewFileStore(t.TempDir())
 	if err != nil {
 		t.Fatalf("project.NewFileStore: %v", err)
 	}
@@ -81,6 +81,32 @@ func TestTodayClassifiesTasksAndProjectNext(t *testing.T) {
 	}
 	if len(result.SuggestedActions) != 1 || result.SuggestedActions[0].TaskID != "overdue" {
 		t.Fatalf("expected overdue suggested action, got %+v", result.SuggestedActions)
+	}
+}
+
+func TestTodayUsesEnglishSectionTitlesAndReasons(t *testing.T) {
+	ctx := context.Background()
+	taskStore, err := filestore.New(t.TempDir(), "json")
+	if err != nil {
+		t.Fatalf("filestore.New: %v", err)
+	}
+	now := time.Date(2026, 4, 30, 10, 0, 0, 0, time.Local)
+	saveTask(t, taskStore, &model.Task{ID: "today", Title: "today task", Status: model.StatusTodo, Source: model.SourceLocal, DueDate: ptr(now), CreatedAt: now, UpdatedAt: now})
+	result, err := (&Service{TaskStore: taskStore}).Today(ctx, Options{Now: now})
+	if err != nil {
+		t.Fatalf("Today: %v", err)
+	}
+	for _, section := range result.Sections {
+		for _, disallowed := range []string{"今日", "即将", "建议", "当前", "推进"} {
+			if strings.Contains(section.Title, disallowed) {
+				t.Fatalf("section title should be English: %#v", result.Sections)
+			}
+			for _, task := range section.Tasks {
+				if strings.Contains(task.Reason, disallowed) {
+					t.Fatalf("task reason should be English: %#v", section.Tasks)
+				}
+			}
+		}
 	}
 }
 

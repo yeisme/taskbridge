@@ -94,7 +94,9 @@ func TestSchedulerIntervalTriggersSync(t *testing.T) {
 	// Wait for multiple intervals
 	time.Sleep(700 * time.Millisecond)
 
-	scheduler.Stop()
+	if err := scheduler.Stop(); err != nil {
+		t.Fatalf("scheduler Stop failed: %v", err)
+	}
 
 	stats := scheduler.GetStats()
 	if stats.TotalRuns == 0 {
@@ -136,7 +138,9 @@ func TestSchedulerCronExpressionStillWorks(t *testing.T) {
 	// Wait for at least one cron tick
 	time.Sleep(1200 * time.Millisecond)
 
-	scheduler.Stop()
+	if err := scheduler.Stop(); err != nil {
+		t.Fatalf("scheduler Stop failed: %v", err)
+	}
 
 	stats := scheduler.GetStats()
 	if stats.TotalRuns == 0 {
@@ -169,7 +173,9 @@ func TestSchedulerIntervalStats(t *testing.T) {
 	ctx := context.Background()
 	_ = scheduler.Start(ctx)
 	time.Sleep(700 * time.Millisecond)
-	scheduler.Stop()
+	if err := scheduler.Stop(); err != nil {
+		t.Fatalf("scheduler Stop failed: %v", err)
+	}
 
 	stats := scheduler.GetStats()
 	if stats.TotalRuns == 0 {
@@ -229,7 +235,7 @@ func TestSchedulerTriggerWithInterval(t *testing.T) {
 
 	ctx := context.Background()
 	_ = scheduler.Start(ctx)
-	defer scheduler.Stop()
+	defer func() { _ = scheduler.Stop() }()
 
 	result, err := scheduler.Trigger(ctx)
 	if err != nil {

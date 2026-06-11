@@ -48,7 +48,7 @@ func BuildListQuery(opts ListOptions) (ListQuery, error) {
 	}
 	if opts.StatusChanged && strings.TrimSpace(opts.Status) != "" {
 		for _, status := range splitCSV(opts.Status) {
-			query.Statuses = append(query.Statuses, model.TaskStatus(status))
+			query.Statuses = append(query.Statuses, normalizeTaskStatus(status))
 		}
 	}
 	if opts.Quadrant > 0 && opts.Quadrant <= 4 {
@@ -91,4 +91,13 @@ func splitCSV(value string) []string {
 		}
 	}
 	return result
+}
+
+func normalizeTaskStatus(status string) model.TaskStatus {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "canceled":
+		return model.StatusCancelled
+	default:
+		return model.TaskStatus(status)
+	}
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/yeisme/taskbridge/internal/clioutput"
 	"github.com/yeisme/taskbridge/internal/provider"
 	"github.com/yeisme/taskbridge/internal/provider/feishu"
 	"github.com/yeisme/taskbridge/internal/provider/google"
@@ -22,105 +23,105 @@ import (
 	"github.com/yeisme/taskbridge/pkg/ui"
 )
 
-// authCmd 认证命令
+// authCmd authentication command
 var authCmd = &cobra.Command{
 	Use:   "auth",
-	Short: "认证管理",
-	Long: `管理 Todo Provider 的认证状态。
+	Short: "Authentication management",
+	Long: `Manage Todo provider authentication state.
 
-支持的 Provider:
+Supported providers:
   - google: Google Tasks API
-  - microsoft: Microsoft Todo
-  - feishu: 飞书任务
+  - microsoft: Microsoft To Do
+  - feishu: Feishu Tasks
   - ticktick: TickTick
-  - dida: 滴答清单（国内）
+  - dida: Dida365
   - todoist: Todoist
 
-子命令:
-  login <provider>    登录指定 Provider
-  logout <provider>   登出指定 Provider
-  status              查看所有 Provider 的认证状态
-  show <provider>     查看单个 Provider 的认证详情
-  refresh <provider>  刷新指定 Provider 的 token
+Subcommands:
+  login <provider>    Log in to the specified provider
+  logout <provider>   Log out of the specified provider
+  status              View the authentication status of all providers
+  show <provider>     View authentication details for a single provider
+  refresh <provider>  Refresh the token of the specified provider
 
-示例:
+Examples:
   taskbridge auth login google
   taskbridge auth status
   taskbridge auth show ms
   taskbridge auth logout google`,
 }
 
-// authLoginCmd 登录命令
+// authLoginCmd login command
 var authLoginCmd = &cobra.Command{
 	Use:   "login <provider>",
-	Short: "登录指定 Provider",
-	Long: `登录指定的 Todo Provider 进行 OAuth2 认证。
+	Short: "Log in to the specified Provider",
+	Long: `Log in to the specified Todo Provider for OAuth2 authentication.
 
-支持的 Provider:
+Supported Providers:
   - google: Google Tasks API
-  - microsoft: Microsoft Todo
-  - feishu: 飞书任务
-  - ticktick: TickTick（国际）
-  - dida: 滴答清单（国内）
+  - microsoft: Microsoft To Do
+  - feishu: Feishu Tasks
+  - ticktick: TickTick
+  - dida: Dida365
   - todoist: Todoist
 
-示例:
+Example:
   taskbridge auth login google
-  taskbridge auth login google --manual  # 手动输入授权码`,
+  taskbridge auth login google --manual # Manually enter the authorization code`,
 	Args: cobra.ExactArgs(1),
 	RunE: runAuthLogin,
 }
 
-// authLogoutCmd 登出命令
+// authLogoutCmd logout command
 var authLogoutCmd = &cobra.Command{
 	Use:   "logout <provider>",
-	Short: "登出指定 Provider",
-	Long: `登出指定的 Todo Provider，删除本地存储的 token。
+	Short: "Log out of the specified Provider",
+	Long: `Log out of the specified Todo Provider and delete the locally stored token.
 
-示例:
+Example:
   taskbridge auth logout google`,
 	Args: cobra.ExactArgs(1),
 	RunE: runAuthLogout,
 }
 
-// authStatusCmd 状态命令
+// authStatusCmd state command
 var authStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "查看所有 Provider 的认证状态",
-	Long: `显示所有已配置 Provider 的认证状态。
+	Short: "View the authentication status of all providers",
+	Long: `Display authentication state for every configured provider.
 
-示例:
+Example:
   taskbridge auth status`,
 	RunE: runAuthStatus,
 }
 
-// authShowCmd 详情命令
+// authShowCmd details command
 var authShowCmd = &cobra.Command{
 	Use:   "show <provider>",
-	Short: "查看单个 Provider 的认证详情",
-	Long: `显示指定 Provider 的认证详情，支持简写。
+	Short: "View authentication details for a single provider",
+	Long: `Display authentication details for the specified provider. Abbreviations are supported.
 
-示例:
+Examples:
   taskbridge auth show microsoft
   taskbridge auth show ms`,
 	Args: cobra.ExactArgs(1),
 	RunE: runAuthShow,
 }
 
-// authRefreshCmd 刷新命令
+// authRefreshCmd refresh command
 var authRefreshCmd = &cobra.Command{
 	Use:   "refresh <provider>",
-	Short: "刷新指定 Provider 的 token",
-	Long: `刷新指定 Provider 的 OAuth2 token。
+	Short: "Refresh the token of the specified Provider",
+	Long: `Refresh the OAuth2 token for the specified Provider.
 
-示例:
+Example:
   taskbridge auth refresh google`,
 	Args: cobra.ExactArgs(1),
 	RunE: runAuthRefresh,
 }
 
 var (
-	// 登录选项
+	//Login options
 	manualAuth bool
 )
 
@@ -132,20 +133,26 @@ func init() {
 	authCmd.AddCommand(authShowCmd)
 	authCmd.AddCommand(authRefreshCmd)
 
-	// 登录命令选项
-	authLoginCmd.Flags().BoolVar(&manualAuth, "manual", false, "手动输入授权码（用于无浏览器环境）")
+	//Login command options
+	authLoginCmd.Flags().BoolVar(&manualAuth, "manual", false, "Manually enter the authorization code (for browser-less environments)")
 }
 
-// runAuthLogin 执行登录
-func runAuthLogin(cmd *cobra.Command, args []string) error {
-	// 解析 Provider 名称（支持简写）
-	providerName := provider.ResolveProviderName(args[0])
+// runAuthLogin performs login
+func rejectAuthMachineOutput(command string) error {
+	if globalProjectionModeRequested() || IsQuietMode() {
+		return usageError(command + " does not support machine output; omit --json, --agent, --events, --explain, and --quiet")
+	}
+	return nil
+}
 
-	// 检查 Provider 是否有效
+func runAuthLogin(cmd *cobra.Command, args []string) error {
+	if err := rejectAuthMachineOutput("auth login"); err != nil {
+		return err
+	}
+	//Resolve Provider names (supports abbreviation)
+	providerName := provider.ResolveProviderName(args[0])
 	if !provider.IsValidProvider(providerName) {
-		fmt.Printf("❌ 不支持的 Provider: %s\n", args[0])
-		fmt.Println("支持的 Provider: google (g), microsoft (ms), feishu, ticktick (tick), dida (ticktick_cn), todoist (todo)")
-		return usageError("不支持的 Provider: " + args[0])
+		return usageError(fmt.Sprintf("Unsupported Provider: %s", args[0]))
 	}
 
 	switch providerName {
@@ -163,101 +170,100 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		return loginTodoist()
 	default:
 		def, _ := provider.GetProviderDefinition(providerName)
-		return commandError(fmt.Sprintf("%s 尚未实现登录功能", def.DisplayName), nil)
+		return commandError(fmt.Sprintf("%s has not yet implemented the login function", def.DisplayName), nil)
 	}
 }
 
-// loginGoogle 登录 Google
+// loginGoogle login Google
 func loginGoogle() error {
-	fmt.Println("🔐 开始 Google Tasks OAuth2 认证...")
+	fmt.Println("🔐 Start Google Tasks OAuth2 authentication...")
 
-	// 确保凭证目录存在
+	//Make sure the credentials directory exists
 	if err := paths.EnsureCredentialsDir(); err != nil {
-		fmt.Printf("❌ 创建凭证目录失败: %v\n", err)
-		return commandError("创建凭证目录失败", err)
+		fmt.Printf("❌ Failed to create credentials directory: %v\n", err)
+		return commandError("Creation of credentials directory failed", err)
 	}
 
-	// 检查凭证文件
+	//Check the credentials file
 	credentialsPath := paths.GetCredentialsPath("google")
 	if _, err := os.Stat(credentialsPath); os.IsNotExist(err) {
-		fmt.Printf("❌ 凭证文件不存在: %s\n", credentialsPath)
-		fmt.Println("\n请按以下步骤操作:")
-		fmt.Println("1. 访问 Google Cloud Console: https://console.cloud.google.com/")
-		fmt.Println("2. 创建项目并启用 Google Tasks API")
-		fmt.Println("3. 配置 OAuth2 同意屏幕")
-		fmt.Println("4. 创建 OAuth2 凭证（桌面应用）")
-		fmt.Printf("5. 下载凭证文件并保存到: %s\n", credentialsPath)
-		return commandError("凭证文件不存在", nil)
+		fmt.Printf("❌ Credential file does not exist: %s\n", credentialsPath)
+		fmt.Println("\nPlease follow these steps:")
+		fmt.Println("1. Visit Google Cloud Console: https://console.cloud.google.com/")
+		fmt.Println("2. Create a project and enable Google Tasks API")
+		fmt.Println("3. Configure the OAuth2 consent screen")
+		fmt.Println("4. Create OAuth2 credentials (desktop app)")
+		fmt.Printf("5. Download the certificate file and save it to: %s\n", credentialsPath)
+		return commandError("Credential file does not exist", nil)
 	}
 
-	// 加载凭证
+	//Load credentials
 	client, err := google.LoadCredentials(credentialsPath)
 	if err != nil {
-		fmt.Printf("❌ 加载凭证失败: %v\n", err)
-		return commandError("加载凭证失败", err)
+		fmt.Printf("❌ Failed to load credentials: %v\n", err)
+		return commandError("Failed to load credentials", err)
 	}
 
-	// 设置 token 文件路径
+	//Set token file path
 	tokenPath := paths.GetTokenPath("google")
 	client.SetTokenFile(tokenPath)
 
-	if manualAuth {
-		// 生成授权 URL
+	if manualAuth { //Generate authorization URL
 		state := fmt.Sprintf("taskbridge-%d", time.Now().Unix())
 		authURL := client.GetAuthURL(state)
 
-		fmt.Println("\n📋 请在浏览器中打开以下链接进行授权:")
+		fmt.Println("\n📋 Please open the following link in your browser for authorization:")
 		fmt.Println()
 		fmt.Printf("   %s\n", authURL)
 		fmt.Println()
 
-		// 手动输入授权码模式（支持直接粘贴回调 URL）
-		fmt.Print("请输入授权码（或粘贴完整回调 URL）: ")
+		//Manually enter authorization code mode (supports directly pasting callback URL)
+		fmt.Print("Please enter the authorization code (or paste the full callback URL):")
 		reader := bufio.NewReader(os.Stdin)
 		input, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Printf("❌ 读取授权码失败: %v\n", err)
-			return commandError("读取授权码失败", err)
+			fmt.Printf("❌ Failed to read authorization code: %v\n", err)
+			return commandError("Failed to read authorization code", err)
 		}
 		code, err := extractGoogleAuthCode(input)
 		if err != nil {
-			fmt.Printf("❌ 授权码格式错误: %v\n", err)
-			fmt.Println("请复制浏览器回调地址里 `code=` 后面的完整值，或直接粘贴完整回调 URL。")
-			return commandError("授权码格式错误", err)
+			fmt.Printf("❌ Authorization code format error: %v\n", err)
+			fmt.Println("Please copy the complete value after `code=` in the browser callback address, or directly paste the complete callback URL.")
+			return commandError("Authorization code format error", err)
 		}
 
-		// 交换 token
+		//Exchange tokens
 		token, err := client.Exchange(context.Background(), code)
 		if err != nil {
-			fmt.Printf("❌ 交换 token 失败: %v\n", err)
-			return commandError("交换 token 失败", err)
+			fmt.Printf("❌ Exchange token failed: %v\n", err)
+			return commandError("Exchange token failed", err)
 		}
 
-		// 保存 token
+		//save token
 		if err := client.SaveToken(token); err != nil {
-			fmt.Printf("❌ 保存 token 失败: %v\n", err)
-			return commandError("保存 token 失败", err)
+			fmt.Printf("❌ Failed to save token: %v\n", err)
+			return commandError("Failed to save token", err)
 		}
 
-		fmt.Println("\n✅ Google Tasks 认证成功!")
-		fmt.Printf("📁 Token 已保存到: %s\n", tokenPath)
+		fmt.Println("\n✅ Google Tasks authentication successful!")
+		fmt.Printf("📁 Token saved to: %s\n", tokenPath)
 	} else {
-		// 自动模式：本地启动回调服务完成认证
+		//Automatic mode: Start the callback service locally to complete the authentication
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 
 		token, err := client.StartAuthServer(ctx, 0)
 		if err != nil {
-			fmt.Printf("❌ 自动认证失败: %v\n", err)
-			fmt.Println("可改用手动模式: taskbridge auth login google --manual")
-			fmt.Println("若你使用 Google Desktop 凭证且 redirect_uri 为 http://localhost，请确保本机 80 端口可监听。")
-			return commandError("自动认证失败", err)
+			fmt.Printf("❌ Automatic authentication failed: %v\n", err)
+			fmt.Println("You can switch to manual mode: taskbridge auth login google --manual")
+			fmt.Println("If you use Google Desktop credentials and the redirect_uri is http://localhost, please make sure that port 80 of your local machine can listen.")
+			return commandError("Automatic authentication failed", err)
 		}
 
-		fmt.Println("\n✅ Google Tasks 自动认证成功!")
-		fmt.Printf("📁 Token 已保存到: %s\n", tokenPath)
+		fmt.Println("\n✅ Google Tasks automatic authentication successful!")
+		fmt.Printf("📁 Token saved to: %s\n", tokenPath)
 		if !token.Expiry.IsZero() {
-			fmt.Printf("⏰ 过期时间: %s\n", token.Expiry.Format("2006-01-02 15:04:05"))
+			fmt.Printf("⏰ Expiration time: %s\n", token.Expiry.Format("2006-01-02 15:04:05"))
 		}
 	}
 	return nil
@@ -266,23 +272,23 @@ func loginGoogle() error {
 func extractGoogleAuthCode(input string) (string, error) {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {
-		return "", fmt.Errorf("输入为空")
+		return "", fmt.Errorf("input is empty")
 	}
 
-	// 支持直接粘贴完整回调 URL。
+	//Supports directly pasting the complete callback URL.
 	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
 		parsedURL, err := url.Parse(trimmed)
 		if err != nil {
-			return "", fmt.Errorf("无法解析 URL: %w", err)
+			return "", fmt.Errorf("unable to resolve URL: %w", err)
 		}
 		code := strings.TrimSpace(parsedURL.Query().Get("code"))
 		if code == "" {
-			return "", fmt.Errorf("URL 中未找到 code 参数")
+			return "", fmt.Errorf("code parameter not found in URL")
 		}
 		return code, nil
 	}
 
-	// 支持粘贴 query 字符串（例如 code=xxx&scope=...）。
+	//Supports pasting query strings (e.g. code=xxx&scope=...).
 	if strings.Contains(trimmed, "code=") {
 		query := trimmed
 		if idx := strings.Index(trimmed, "?"); idx >= 0 && idx < len(trimmed)-1 {
@@ -298,7 +304,7 @@ func extractGoogleAuthCode(input string) (string, error) {
 	}
 
 	if strings.HasPrefix(trimmed, "taskbridge-") || looksLikeNumericState(trimmed) {
-		return "", fmt.Errorf("看起来输入的是 state，不是授权 code")
+		return "", fmt.Errorf("it seems that the input is state, not authorization code")
 	}
 
 	return trimmed, nil
@@ -316,95 +322,225 @@ func looksLikeNumericState(v string) bool {
 	return true
 }
 
-// runAuthLogout 执行登出
-func runAuthLogout(cmd *cobra.Command, args []string) error {
-	// 解析 Provider 名称（支持简写）
+// runAuthLogout performs logout
+func runAuthLogout(cmd *cobra.Command, args []string) error { //Resolve Provider names (supports abbreviation)
 	providerName := provider.ResolveProviderName(args[0])
 
-	// 检查 Provider 是否有效
+	//Check Provider yesnoefficient
 	if !provider.IsValidProvider(providerName) {
-		fmt.Printf("❌ 不支持的 Provider: %s\n", args[0])
-		return usageError("不支持的 Provider: " + args[0])
+		return usageError(fmt.Sprintf("Unsupported Provider: %s", args[0]))
 	}
 
 	tokenPath := paths.GetTokenPath(providerName)
 	hasToken, err := tokenstore.Has(tokenPath, providerName)
 	if err != nil {
-		fmt.Printf("❌ 读取 token 失败: %v\n", err)
-		return commandError("读取 token 失败", err)
+		return commandError("Failed to read token", err)
+	}
+
+	receipt := AuthLogoutReceipt{
+		Provider:    providerName,
+		DisplayName: getAuthProviderMeta(providerName).DisplayName,
+		TokenPath:   tokenPath,
+		HadToken:    hasToken,
 	}
 	if !hasToken {
-		fmt.Printf("ℹ️ %s 未登录\n", providerName)
-		return nil
+		projection := buildAuthLogoutProjection(receipt)
+		return printProjection("text", projection, func() {
+			fmt.Print(renderAuthLogout(projection))
+		})
 	}
 
 	if err := tokenstore.Delete(tokenPath, providerName); err != nil {
-		fmt.Printf("❌ 登出失败: %v\n", err)
-		return commandError("登出失败", err)
+		return commandError("Logout failed", err)
 	}
 
-	fmt.Printf("✅ %s 已登出\n", providerName)
-	return nil
+	receipt.TokenDeleted = true
+	projection := buildAuthLogoutProjection(receipt)
+	return printProjection("text", projection, func() {
+		fmt.Print(renderAuthLogout(projection))
+	})
 }
 
-// runAuthStatus 执行状态查询
+type AuthLogoutReceipt struct {
+	Provider     string `json:"provider"`
+	DisplayName  string `json:"display_name"`
+	TokenPath    string `json:"token_path"`
+	HadToken     bool   `json:"had_token"`
+	TokenDeleted bool   `json:"token_deleted"`
+}
+
+func buildAuthLogoutProjection(receipt AuthLogoutReceipt) clioutput.Projection {
+	projection := clioutput.New("auth.logout")
+	projection.Facts["provider"] = receipt.Provider
+	projection.Facts["had_token"] = receipt.HadToken
+	projection.Facts["token_deleted"] = receipt.TokenDeleted
+	projection.Facts["token_path"] = receipt.TokenPath
+	projection.Data = receipt
+	projection.Actions = []clioutput.Action{{Name: "login", Command: "taskbridge auth login " + receipt.Provider}}
+	if receipt.TokenDeleted {
+		projection.Summary = receipt.DisplayName + " is logged out."
+	} else {
+		projection.Summary = receipt.DisplayName + " was already logged out."
+	}
+	return projection
+}
+
+func renderAuthLogout(projection clioutput.Projection) string {
+	receipt, _ := projection.Data.(AuthLogoutReceipt)
+	return clioutput.RenderSummary(clioutput.Projection{
+		SpecVersion: clioutput.SpecVersion,
+		Command:     projection.Command,
+		Status:      projection.Status,
+		Summary:     projection.Summary,
+		Facts: map[string]any{
+			"Provider":      receipt.DisplayName,
+			"Token file":    receipt.TokenPath,
+			"Token existed": receipt.HadToken,
+			"Token deleted": receipt.TokenDeleted,
+		},
+		Actions: projection.Actions,
+	})
+}
+
+type AuthStatusRow struct {
+	Provider      string `json:"provider"`
+	DisplayName   string `json:"display_name"`
+	Alias         string `json:"alias"`
+	Status        string `json:"status"`
+	Authenticated bool   `json:"authenticated"`
+	Valid         string `json:"valid"`
+	ExpiresAt     string `json:"expires_at"`
+	NextAction    string `json:"next_action"`
+}
+
+func buildAuthStatusProjection() clioutput.Projection {
+	rows := make([]AuthStatusRow, 0, len(getAuthProviderOrder()))
+	authenticated := 0
+	for _, p := range getAuthProviderOrder() {
+		snapshot := getProviderAuthSnapshot(p)
+		if snapshot.Authenticated {
+			authenticated++
+		}
+		rows = append(rows, AuthStatusRow{
+			Provider:      snapshot.Provider,
+			DisplayName:   snapshot.DisplayName,
+			Alias:         snapshot.ShortName,
+			Status:        authDisplayStatus(snapshot),
+			Authenticated: snapshot.Authenticated,
+			Valid:         authValidity(snapshot.Valid),
+			ExpiresAt:     authExpiry(snapshot.ExpiresAt),
+			NextAction:    snapshot.NextAction,
+		})
+	}
+	projection := clioutput.New("auth.status")
+	projection.Summary = fmt.Sprintf("%d of %d providers are authenticated.", authenticated, len(rows))
+	projection.Facts["providers"] = len(rows)
+	projection.Facts["authenticated"] = authenticated
+	for _, row := range rows {
+		projection.Facts["provider."+row.Provider+".authenticated"] = row.Authenticated
+		projection.Facts["provider."+row.Provider+".status"] = row.Status
+	}
+	projection.Data = map[string]any{"providers": rows}
+	return projection
+}
+
+func renderAuthStatus(projection clioutput.Projection) string {
+	data, _ := projection.Data.(map[string]any)
+	rows, _ := data["providers"].([]AuthStatusRow)
+	table := ui.NewTable("Provider", "Alias", "Status", "Expires")
+	for _, row := range rows {
+		table.AddRow(row.DisplayName, row.Alias, statusWithIcon(row.Status), row.ExpiresAt)
+	}
+	return "\n" + table.Render() + "\n"
+}
+
+// runAuthStatus executes state query
 func runAuthStatus(cmd *cobra.Command, args []string) error {
-	printAuthStatusTable()
-	return nil
+	projection := buildAuthStatusProjection()
+	return printProjection("text", projection, func() {
+		fmt.Print(renderAuthStatus(projection))
+	})
 }
 
-// runAuthShow 执行单个 Provider 详情查询
+type AuthShowDetails struct {
+	Provider      string `json:"provider"`
+	DisplayName   string `json:"display_name"`
+	Alias         string `json:"alias"`
+	TokenPath     string `json:"token_path"`
+	Status        string `json:"status"`
+	Authenticated bool   `json:"authenticated"`
+	Valid         string `json:"valid"`
+	ExpiresAt     string `json:"expires_at"`
+	NextAction    string `json:"next_action"`
+}
+
+func buildAuthShowProjection(providerName string) clioutput.Projection {
+	snapshot := getProviderAuthSnapshot(providerName)
+	details := AuthShowDetails{
+		Provider:      snapshot.Provider,
+		DisplayName:   snapshot.DisplayName,
+		Alias:         snapshot.ShortName,
+		TokenPath:     snapshot.TokenPath,
+		Status:        authDisplayStatus(snapshot),
+		Authenticated: snapshot.Authenticated,
+		Valid:         authValidity(snapshot.Valid),
+		ExpiresAt:     authExpiry(snapshot.ExpiresAt),
+		NextAction:    snapshot.NextAction,
+	}
+
+	projection := clioutput.New("auth.show")
+	projection.Summary = snapshot.DisplayName + " authentication details."
+	projection.Facts["provider"] = providerName
+	projection.Facts["authenticated"] = details.Authenticated
+	projection.Facts["valid"] = details.Valid
+	projection.Facts["expires_at"] = details.ExpiresAt
+	projection.Data = details
+	projection.Actions = []clioutput.Action{{Name: "next", Command: details.NextAction}}
+	return projection
+}
+
+func renderAuthShow(projection clioutput.Projection) string {
+	details, _ := projection.Data.(AuthShowDetails)
+	return clioutput.RenderSummary(clioutput.Projection{
+		SpecVersion: clioutput.SpecVersion,
+		Command:     projection.Command,
+		Status:      projection.Status,
+		Summary:     projection.Summary,
+		Facts: map[string]any{
+			"Provider":       details.DisplayName,
+			"Alias":          details.Alias,
+			"Status":         statusWithIcon(details.Status),
+			"Authenticated":  details.Authenticated,
+			"Token is valid": details.Valid,
+			"Expires":        details.ExpiresAt,
+			"Token file":     details.TokenPath,
+		},
+		Actions: projection.Actions,
+	})
+}
+
+// runAuthShow executes a single Provider details query
 func runAuthShow(cmd *cobra.Command, args []string) error {
 	providerName := provider.ResolveProviderName(args[0])
 	if !provider.IsValidProvider(providerName) {
-		fmt.Printf("❌ 不支持的 Provider: %s\n", args[0])
-		fmt.Println("支持的 Provider: google (g), microsoft (ms), feishu, ticktick (tick), dida (ticktick_cn), todoist (todo)")
-		return usageError("不支持的 Provider: " + args[0])
+		return usageError(fmt.Sprintf("Unsupported Provider: %s", args[0]))
 	}
 
-	snapshot := getProviderAuthSnapshot(providerName)
-
-	authenticated := "否"
-	if snapshot.Authenticated {
-		authenticated = "是"
-	}
-
-	valid := "未知"
-	if snapshot.Valid != nil {
-		if *snapshot.Valid {
-			valid = "是"
-		} else {
-			valid = "否"
-		}
-	}
-
-	pairs := map[string]string{
-		"Provider": snapshot.Provider,
-		"显示名称":     snapshot.DisplayName,
-		"简写":       snapshot.ShortName,
-		"Token 文件": snapshot.TokenPath,
-		"状态":       snapshot.StatusText,
-		"已认证":      authenticated,
-		"Token 有效": valid,
-		"过期时间":     snapshot.ExpiresAt,
-		"建议操作":     snapshot.NextAction,
-	}
-
-	fmt.Println()
-	fmt.Println(ui.KeyValueCard("🔐 Auth Detail", pairs))
-	fmt.Println()
-	return nil
+	projection := buildAuthShowProjection(providerName)
+	return printProjection("text", projection, func() {
+		fmt.Print(renderAuthShow(projection))
+	})
 }
 
-// runAuthRefresh 执行 token 刷新
-func runAuthRefresh(cmd *cobra.Command, args []string) error {
-	// 解析 Provider 名称（支持简写）
+// runAuthRefresh performs token refresh
+func runAuthRefresh(cmd *cobra.Command, args []string) error { //Resolve Provider names (supports abbreviation)
+	if err := rejectAuthMachineOutput("auth refresh"); err != nil {
+		return err
+	}
 	providerName := provider.ResolveProviderName(args[0])
-
-	// 检查 Provider 是否有效
+	//Check Provider yesnoefficient
 	if !provider.IsValidProvider(providerName) {
-		fmt.Printf("❌ 不支持的 Provider: %s\n", args[0])
-		return usageError("不支持的 Provider: " + args[0])
+		return usageError(fmt.Sprintf("Unsupported Provider: %s", args[0]))
 	}
 
 	switch providerName {
@@ -422,158 +558,158 @@ func runAuthRefresh(cmd *cobra.Command, args []string) error {
 		return refreshTodoistToken()
 	default:
 		def, _ := provider.GetProviderDefinition(providerName)
-		return commandError(fmt.Sprintf("%s 尚未实现 token 刷新功能", def.DisplayName), nil)
+		return commandError(fmt.Sprintf("%s has not yet implemented the token refresh function", def.DisplayName), nil)
 	}
 }
 
-// refreshGoogleToken 刷新 Google token
+// refreshGoogleToken refresh Google token
 func refreshGoogleToken() error {
 	client, err := google.NewOAuth2ClientFromHome()
 	if err != nil {
-		fmt.Printf("❌ 加载 Google OAuth2 客户端失败: %v\n", err)
-		return commandError("加载 Google OAuth2 客户端失败", err)
+		fmt.Printf("❌ Failed to load Google OAuth2 client: %v\n", err)
+		return commandError("Failed to load Google OAuth2 client", err)
 	}
 
 	token, err := client.RefreshToken(context.Background())
 	if err != nil {
-		fmt.Printf("❌ 刷新 token 失败: %v\n", err)
-		return commandError("刷新 token 失败", err)
+		fmt.Printf("❌ Failed to refresh token: %v\n", err)
+		return commandError("Refresh token failed", err)
 	}
 
 	if err := client.SaveToken(token); err != nil {
-		fmt.Printf("❌ 保存 token 失败: %v\n", err)
-		return commandError("保存 token 失败", err)
+		fmt.Printf("❌ Failed to save token: %v\n", err)
+		return commandError("Failed to save token", err)
 	}
 
-	fmt.Println("✅ Google token 已刷新")
+	fmt.Println("✅ Google token has been refreshed")
 	return nil
 }
 
-// loginMicrosoft 登录 Microsoft
+// loginMicrosoft login Microsoft
 func loginMicrosoft() error {
-	fmt.Println("🔐 开始 Microsoft To Do OAuth2 认证...")
+	fmt.Println("🔐 Start Microsoft To Do OAuth2 Authentication...")
 
-	// 确保凭证目录存在
+	//Make sure the credentials directory exists
 	if err := paths.EnsureCredentialsDir(); err != nil {
-		fmt.Printf("❌ 创建凭证目录失败: %v\n", err)
-		return commandError("创建凭证目录失败", err)
+		fmt.Printf("❌ Failed to create credentials directory: %v\n", err)
+		return commandError("Creation of credentials directory failed", err)
 	}
 
-	// 检查凭证文件
+	//Check the credentials file
 	credentialsPath := paths.GetCredentialsPath("microsoft")
 	if _, err := os.Stat(credentialsPath); os.IsNotExist(err) {
-		fmt.Printf("❌ 凭证文件不存在: %s\n", credentialsPath)
-		fmt.Println("\n请按以下步骤操作:")
-		fmt.Println("1. 访问 Azure Portal: https://portal.azure.com/")
-		fmt.Println("2. 注册应用程序（Azure Active Directory）")
-		fmt.Println("3. 配置重定向 URI: http://localhost:8080/callback")
-		fmt.Println("4. 添加 API 权限: Tasks.ReadWrite, User.Read")
-		fmt.Println("5. 创建客户端密钥")
-		fmt.Printf("6. 创建凭证文件并保存到: %s\n", credentialsPath)
-		fmt.Println("\n凭证文件格式:")
+		fmt.Printf("❌ Credential file does not exist: %s\n", credentialsPath)
+		fmt.Println("\nPlease follow these steps:")
+		fmt.Println("1. Visit Azure Portal: https://portal.azure.com/")
+		fmt.Println("2. Register the application (Azure Active Directory)")
+		fmt.Println("3. Configure redirect URI: http://localhost:8080/callback")
+		fmt.Println("4. Add API permissions: Tasks.ReadWrite, User.Read")
+		fmt.Println("5. Create client key")
+		fmt.Printf("6. Create the credentials file and save it to: %s\n", credentialsPath)
+		fmt.Println("\nCertificate file format:")
 		fmt.Println(`{
-	 "client_id": "你的应用ID",
-	 "client_secret": "你的客户端密钥",
+	 "client_id": "your app id",
+	 "client_secret": "your client key",
 	 "tenant_id": "common",
 	 "redirect_url": "http://localhost:8080/callback"
 }`)
-		return commandError("凭证文件不存在", nil)
+		return commandError("Credential file does not exist", nil)
 	}
 
-	// 加载凭证
+	//Load credentials
 	oauthClient, err := microsoft.LoadCredentials(credentialsPath)
 	if err != nil {
-		fmt.Printf("❌ 加载凭证失败: %v\n", err)
-		return commandError("加载凭证失败", err)
+		fmt.Printf("❌ Failed to load credentials: %v\n", err)
+		return commandError("Failed to load credentials", err)
 	}
 
-	// 设置 token 文件路径
+	//Set token file path
 	tokenPath := paths.GetTokenPath("microsoft")
 	oauthClient.SetTokenFile(tokenPath)
 
-	// 启动认证服务器
+	//Start authentication server
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	token, err := oauthClient.StartAuthServer(ctx, 8080)
 	if err != nil {
-		fmt.Printf("❌ 认证失败: %v\n", err)
-		return commandError("认证失败", err)
+		fmt.Printf("❌ Authentication failed: %v\n", err)
+		return commandError("Authentication failed", err)
 	}
 
-	fmt.Println("\n✅ Microsoft To Do 认证成功!")
-	fmt.Printf("📁 Token 已保存到: %s\n", tokenPath)
-	fmt.Printf("🔑 Token 类型: %s\n", token.TokenType)
+	fmt.Println("\n✅ Microsoft To Do certification successful!")
+	fmt.Printf("📁 Token saved to: %s\n", tokenPath)
+	fmt.Printf("🔑 Token type: %s\n", token.TokenType)
 	return nil
 }
 
-// refreshMicrosoftToken 刷新 Microsoft token
+// refreshMicrosoftToken refresh Microsoft token
 func refreshMicrosoftToken() error {
 	credentialsPath := paths.GetCredentialsPath("microsoft")
 	tokenPath := paths.GetTokenPath("microsoft")
 
 	oauthClient, err := microsoft.LoadCredentials(credentialsPath)
 	if err != nil {
-		fmt.Printf("❌ 加载 Microsoft OAuth2 客户端失败: %v\n", err)
-		return commandError("加载 Microsoft OAuth2 客户端失败", err)
+		fmt.Printf("❌ Failed to load Microsoft OAuth2 client: %v\n", err)
+		return commandError("Failed to load Microsoft OAuth2 client", err)
 	}
 
 	oauthClient.SetTokenFile(tokenPath)
 
-	// 加载现有 token
+	//Load existing token
 	if err := oauthClient.LoadToken(); err != nil {
-		fmt.Printf("❌ 加载 token 失败: %v\n", err)
-		return commandError("加载 token 失败", err)
+		fmt.Printf("❌ Failed to load token: %v\n", err)
+		return commandError("Failed to load token", err)
 	}
 
-	// 刷新 token
+	//refresh token
 	token, err := oauthClient.RefreshToken(context.Background())
 	if err != nil {
-		fmt.Printf("❌ 刷新 token 失败: %v\n", err)
-		return commandError("刷新 token 失败", err)
+		fmt.Printf("❌ Failed to refresh token: %v\n", err)
+		return commandError("Refresh token failed", err)
 	}
 
 	if err := oauthClient.SaveToken(); err != nil {
-		fmt.Printf("❌ 保存 token 失败: %v\n", err)
-		return commandError("保存 token 失败", err)
+		fmt.Printf("❌ Failed to save token: %v\n", err)
+		return commandError("Failed to save token", err)
 	}
 
-	fmt.Println("✅ Microsoft token 已刷新")
-	fmt.Printf("🔑 新过期时间: %s\n", token.Expiry.Format("2006-01-02 15:04:05"))
+	fmt.Println("✅ Microsoft token has been refreshed")
+	fmt.Printf("🔑 New expiration time: %s\n", token.Expiry.Format("2006-01-02 15:04:05"))
 	return nil
 }
 
-// loginFeishu 登录飞书
+// loginFeishu login Feishu
 func loginFeishu() error {
-	fmt.Println("🔐 开始飞书 Todo OAuth2 认证...")
+	fmt.Println("🔐 Start Feishu Todo OAuth2 authentication...")
 
 	if err := paths.EnsureCredentialsDir(); err != nil {
-		fmt.Printf("❌ 创建凭证目录失败: %v\n", err)
-		return commandError("创建凭证目录失败", err)
+		fmt.Printf("❌ Failed to create credentials directory: %v\n", err)
+		return commandError("Creation of credentials directory failed", err)
 	}
 
 	credentialsPath := paths.GetCredentialsPath("feishu")
 	if _, err := os.Stat(credentialsPath); os.IsNotExist(err) {
-		fmt.Printf("❌ 凭证文件不存在: %s\n", credentialsPath)
-		fmt.Println("\n请按以下步骤操作:")
-		fmt.Println("1. 访问飞书开放平台: https://open.feishu.cn/")
-		fmt.Println("2. 创建自建应用并开启 Todo 相关权限")
-		fmt.Println("3. 配置重定向 URL（端口需与本地回调监听一致，例如 http://127.0.0.1:3456/callback）")
-		fmt.Printf("4. 创建凭证文件并保存到: %s\n", credentialsPath)
-		fmt.Println("\n凭证文件格式:")
+		fmt.Printf("❌ Credential file does not exist: %s\n", credentialsPath)
+		fmt.Println("\nPlease follow these steps:")
+		fmt.Println("1. Visit Feishu open platform: https://open.feishu.cn/")
+		fmt.Println("2. Create a self-built application and enable Todo related permissions")
+		fmt.Println("3. Configure the redirect URL (the port must be consistent with the local callback listening, such as http://127.0.0.1:3456/callback)")
+		fmt.Printf("4. Create the credentials file and save it to: %s\n", credentialsPath)
+		fmt.Println("\nCertificate file format:")
 		fmt.Println(`{
   "app_id": "cli_xxx",
   "app_secret": "xxxx",
   "redirect_url": "http://127.0.0.1:3456/callback",
   "scopes": ["task:tasklist:read","task:tasklist:write","task:task:read","task:task:write"]
 }`)
-		return commandError("凭证文件不存在", nil)
+		return commandError("Credential file does not exist", nil)
 	}
 
 	oauthClient, err := feishu.LoadCredentials(credentialsPath)
 	if err != nil {
-		fmt.Printf("❌ 加载凭证失败: %v\n", err)
-		return commandError("加载凭证失败", err)
+		fmt.Printf("❌ Failed to load credentials: %v\n", err)
+		return commandError("Failed to load credentials", err)
 	}
 
 	tokenPath := paths.GetTokenPath("feishu")
@@ -582,53 +718,53 @@ func loginFeishu() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// 端口由凭证中的 redirect_url 决定（不强制使用 8080）
+	//The port is determined by the redirect_url in the credentials (8080 is not mandatory)
 	token, err := oauthClient.StartAuthServer(ctx, 0)
 	if err != nil {
-		fmt.Printf("❌ 认证失败: %v\n", err)
-		return commandError("认证失败", err)
+		fmt.Printf("❌ Authentication failed: %v\n", err)
+		return commandError("Authentication failed", err)
 	}
 
-	fmt.Println("\n✅ 飞书 Todo 认证成功!")
-	fmt.Printf("📁 Token 已保存到: %s\n", tokenPath)
-	fmt.Printf("🔑 Token 类型: %s\n", token.TokenType)
+	fmt.Println("\n✅ Feishu Todo certification successful!")
+	fmt.Printf("📁 Token saved to: %s\n", tokenPath)
+	fmt.Printf("🔑 Token type: %s\n", token.TokenType)
 	return nil
 }
 
-// refreshFeishuToken 刷新飞书 token
+// refreshFeishuToken refresh Feishu token
 func refreshFeishuToken() error {
 	credentialsPath := paths.GetCredentialsPath("feishu")
 	tokenPath := paths.GetTokenPath("feishu")
 
 	oauthClient, err := feishu.LoadCredentials(credentialsPath)
 	if err != nil {
-		fmt.Printf("❌ 加载飞书 OAuth2 客户端失败: %v\n", err)
-		return commandError("加载飞书 OAuth2 客户端失败", err)
+		fmt.Printf("❌ Failed to load Feishu OAuth2 client: %v\n", err)
+		return commandError("Failed to load Feishu OAuth2 client", err)
 	}
 
 	oauthClient.SetTokenFile(tokenPath)
 	if err := oauthClient.LoadToken(); err != nil {
-		fmt.Printf("❌ 加载 token 失败: %v\n", err)
-		return commandError("加载 token 失败", err)
+		fmt.Printf("❌ Failed to load token: %v\n", err)
+		return commandError("Failed to load token", err)
 	}
 
 	token, err := oauthClient.RefreshToken(context.Background())
 	if err != nil {
-		fmt.Printf("❌ 刷新 token 失败: %v\n", err)
-		return commandError("刷新 token 失败", err)
+		fmt.Printf("❌ Failed to refresh token: %v\n", err)
+		return commandError("Refresh token failed", err)
 	}
 
 	if err := oauthClient.SaveToken(); err != nil {
-		fmt.Printf("❌ 保存 token 失败: %v\n", err)
-		return commandError("保存 token 失败", err)
+		fmt.Printf("❌ Failed to save token: %v\n", err)
+		return commandError("Failed to save token", err)
 	}
 
-	fmt.Println("✅ 飞书 token 已刷新")
-	fmt.Printf("🔑 新过期时间(秒): %d\n", token.ExpiresIn)
+	fmt.Println("✅ Feishu token has been refreshed")
+	fmt.Printf("🔑 Expires in: %d seconds\n", token.ExpiresIn)
 	return nil
 }
 
-// loginTickTick 登录 TickTick（API Token）
+// loginTickTick login TickTick (API Token)
 func loginTickTick() error {
 	return loginTickStyleProvider("ticktick")
 }
@@ -645,35 +781,35 @@ func loginTickStyleProvider(providerName string) error {
 		tokenHint = "dp_"
 	}
 
-	fmt.Printf("🔐 开始 %s API Token 认证...\n", displayName)
+	fmt.Printf("🔐 Start %s API Token authentication...\n", displayName)
 
 	if err := paths.EnsureCredentialsDir(); err != nil {
-		fmt.Printf("❌ 创建凭证目录失败: %v\n", err)
-		return commandError("创建凭证目录失败", err)
+		fmt.Printf("❌ Failed to create credentials directory: %v\n", err)
+		return commandError("Creation of credentials directory failed", err)
 	}
 
 	tokenPath := paths.GetTokenPath(providerName)
-	fmt.Printf("\n请按以下步骤获取 %s API Token:\n", displayName)
+	fmt.Printf("\nPlease follow the steps below to obtain %s API Token:\n", displayName)
 	if providerName == "dida" {
-		fmt.Println("1. 打开 dida365.com 并登录开发者平台或 OpenAPI 管理页")
+		fmt.Println("1. Open dida365.com and log in to the developer platform or OpenAPI management page")
 	} else {
-		fmt.Println("1. 打开 TickTick 开发者平台并登录")
+		fmt.Println("1. Open the TickTick Developer Platform and log in")
 	}
-	fmt.Println("2. 创建或查看个人 API Token")
-	fmt.Printf("3. 复制 token（通常以 `%s` 开头）\n", tokenHint)
+	fmt.Println("2. Create or view personal API Token")
+	fmt.Printf("3. Copy token (usually starts with `%s`)\n", tokenHint)
 	fmt.Println()
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("请输入 %s API Token: ", displayName)
+	fmt.Printf("Please enter %s API Token:", displayName)
 	apiToken, err := reader.ReadString('\n')
 	if err != nil {
-		fmt.Printf("❌ 读取 API Token 失败: %v\n", err)
-		return commandError("读取 API Token 失败", err)
+		fmt.Printf("❌ Failed to read API Token: %v\n", err)
+		return commandError("Failed to read API Token", err)
 	}
 	apiToken = strings.TrimSpace(apiToken)
 	if apiToken == "" {
-		fmt.Println("❌ API Token 不能为空")
-		return commandError("API Token 不能为空", nil)
+		fmt.Println("❌ API Token cannot be empty")
+		return commandError("API Token cannot be empty", nil)
 	}
 
 	p, err := ticktick.NewProvider(ticktick.Config{
@@ -682,23 +818,23 @@ func loginTickStyleProvider(providerName string) error {
 		TokenFile:    tokenPath,
 	})
 	if err != nil {
-		fmt.Printf("❌ 初始化 %s Provider 失败: %v\n", displayName, err)
-		return commandError("初始化 Provider 失败", err)
+		fmt.Printf("❌ Failed to initialize %s Provider: %v\n", displayName, err)
+		return commandError("Failed to initialize Provider", err)
 	}
 	if err := p.Authenticate(context.Background(), map[string]interface{}{
 		"token":    apiToken,
 		"provider": providerName,
 	}); err != nil {
-		fmt.Printf("❌ %s 认证失败: %v\n", displayName, err)
-		return commandError("认证失败", err)
+		fmt.Printf("❌ %s Authentication failed: %v\n", displayName, err)
+		return commandError("Authentication failed", err)
 	}
 
-	fmt.Printf("\n✅ %s 认证成功!\n", displayName)
-	fmt.Printf("📁 Token 已保存到: %s\n", tokenPath)
+	fmt.Printf("\n✅ %s authentication successful!\n", displayName)
+	fmt.Printf("📁 Token saved to: %s\n", tokenPath)
 	return nil
 }
 
-// refreshTickTickToken 刷新 TickTick token（静态 token）
+// refreshTickTickToken refresh TickTick token (static token)
 func refreshTickTickToken() error {
 	return refreshTickStyleProvider("ticktick")
 }
@@ -715,12 +851,12 @@ func refreshTickStyleProvider(providerName string) error {
 	tokenPath := paths.GetTokenPath(providerName)
 	hasToken, err := tokenstore.Has(tokenPath, providerName)
 	if err != nil {
-		fmt.Printf("❌ 读取 %s token 失败: %v\n", displayName, err)
-		return commandError("读取 token 失败", err)
+		fmt.Printf("❌ Failed to read %s token: %v\n", displayName, err)
+		return commandError("Failed to read token", err)
 	}
 	if !hasToken {
-		fmt.Printf("❌ %s 凭证不存在，请先执行: taskbridge auth login %s\n", displayName, providerName)
-		return commandError("凭证不存在，请先登录", nil)
+		fmt.Printf("❌ The %s credentials do not exist, please execute: taskbridge auth login %s\n", displayName, providerName)
+		return commandError("The certificate does not exist, please log in first", nil)
 	}
 
 	p, err := ticktick.NewProvider(ticktick.Config{
@@ -728,44 +864,44 @@ func refreshTickStyleProvider(providerName string) error {
 		TokenFile:    tokenPath,
 	})
 	if err != nil {
-		fmt.Printf("❌ 初始化 %s Provider 失败: %v\n", displayName, err)
-		return commandError("初始化 Provider 失败", err)
+		fmt.Printf("❌ Failed to initialize %s Provider: %v\n", displayName, err)
+		return commandError("Failed to initialize Provider", err)
 	}
 	if err := p.RefreshToken(context.Background()); err != nil {
-		fmt.Printf("❌ 刷新 %s token 失败: %v\n", displayName, err)
-		return commandError("刷新 token 失败", err)
+		fmt.Printf("❌ Failed to refresh %s token: %v\n", displayName, err)
+		return commandError("Refresh token failed", err)
 	}
 
-	fmt.Printf("✅ %s token 校验通过（静态 token 无需刷新）\n", displayName)
+	fmt.Printf("✅ %s token verification passed (static token does not need to be refreshed)\n", displayName)
 	return nil
 }
 
-// loginTodoist 登录 Todoist（API Token）
+// loginTodoist login Todoist (API Token)
 func loginTodoist() error {
-	fmt.Println("🔐 开始 Todoist API Token 认证...")
+	fmt.Println("🔐 Start Todoist API Token authentication...")
 
 	if err := paths.EnsureCredentialsDir(); err != nil {
-		fmt.Printf("❌ 创建凭证目录失败: %v\n", err)
-		return commandError("创建凭证目录失败", err)
+		fmt.Printf("❌ Failed to create credentials directory: %v\n", err)
+		return commandError("Creation of credentials directory failed", err)
 	}
 
 	tokenPath := paths.GetTokenPath("todoist")
-	fmt.Println("\n请按以下步骤获取 Todoist API Token:")
-	fmt.Println("1. 访问 https://todoist.com/app/settings/integrations/developer")
-	fmt.Println("2. 复制 API Token")
+	fmt.Println("\nPlease follow the steps below to obtain Todoist API Token:")
+	fmt.Println("1. Visit https://todoist.com/app/settings/integrations/developer")
+	fmt.Println("2. Copy API Token")
 	fmt.Println()
 
-	fmt.Print("请输入 API Token: ")
+	fmt.Print("Please enter API Token:")
 	reader := bufio.NewReader(os.Stdin)
 	token, err := reader.ReadString('\n')
 	if err != nil {
-		fmt.Printf("❌ 读取 API Token 失败: %v\n", err)
-		return commandError("读取 API Token 失败", err)
+		fmt.Printf("❌ Failed to read API Token: %v\n", err)
+		return commandError("Failed to read API Token", err)
 	}
 	token = strings.TrimSpace(token)
 	if token == "" {
-		fmt.Println("❌ API Token 不能为空")
-		return commandError("API Token 不能为空", nil)
+		fmt.Println("❌ API Token cannot be empty")
+		return commandError("API Token cannot be empty", nil)
 	}
 
 	p, err := todoist.NewProvider(todoist.Config{
@@ -773,23 +909,23 @@ func loginTodoist() error {
 		TokenFile: tokenPath,
 	})
 	if err != nil {
-		fmt.Printf("❌ 初始化 Todoist Provider 失败: %v\n", err)
-		return commandError("初始化 Provider 失败", err)
+		fmt.Printf("❌ Failed to initialize Todoist Provider: %v\n", err)
+		return commandError("Failed to initialize Provider", err)
 	}
 	if err := p.Authenticate(context.Background(), map[string]interface{}{"api_token": token}); err != nil {
-		fmt.Printf("❌ Todoist 认证失败: %v\n", err)
-		return commandError("认证失败", err)
+		fmt.Printf("❌ Todoist Authentication failed: %v\n", err)
+		return commandError("Authentication failed", err)
 	}
 
-	fmt.Println("\n✅ Todoist 认证成功!")
-	fmt.Printf("📁 Token 已保存到: %s\n", tokenPath)
+	fmt.Println("\n✅ Todoist certification successful!")
+	fmt.Printf("📁 Token saved to: %s\n", tokenPath)
 	return nil
 }
 
-// refreshTodoistToken 刷新 Todoist token（静态 API Token，无需刷新）
+// refreshTodoistToken refresh Todoist token (static API Token, no Need to refresh)
 func refreshTodoistToken() error {
-	fmt.Println("ℹ️ Todoist 使用静态 API Token，无需刷新。")
-	fmt.Println("若 token 失效，请重新执行: taskbridge auth login todoist")
+	fmt.Println("ℹ️ Todoist uses static API Token, no need to refresh.")
+	fmt.Println("If the token is invalid, please re-execute: taskbridge auth login todoist")
 	return nil
 }
 
@@ -835,6 +971,39 @@ func boolPtr(v bool) *bool {
 	return &v
 }
 
+func authValidity(valid *bool) string {
+	if valid == nil {
+		return "unknown"
+	}
+	if *valid {
+		return "yes"
+	}
+	return "no"
+}
+
+func authDisplayStatus(snapshot AuthSnapshot) string {
+	if snapshot.Authenticated {
+		if snapshot.Valid != nil && !*snapshot.Valid {
+			return "Expired"
+		}
+		return "Connected"
+	}
+	if snapshot.StatusText == "⚠️ Token error" {
+		return "Token error"
+	}
+	if isProviderEnabled(snapshot.Provider) {
+		return "Not authenticated"
+	}
+	return "Not configured"
+}
+
+func authExpiry(value string) string {
+	if value == "efficient" {
+		return "valid"
+	}
+	return value
+}
+
 func isProviderEnabled(providerName string) bool {
 	switch providerName {
 	case "google":
@@ -871,8 +1040,8 @@ func getProviderAuthSnapshot(providerName string) AuthSnapshot {
 	hasToken, err := tokenstore.Has(snapshot.TokenPath, meta.Name)
 	if err != nil {
 		snapshot.StatusText = "⚠️ Token error"
-		snapshot.ExpiresAt = "读取失败"
-		snapshot.NextAction = fmt.Sprintf("检查 token 文件: %s", snapshot.TokenPath)
+		snapshot.ExpiresAt = "Read failed"
+		snapshot.NextAction = fmt.Sprintf("Check token file: %s", snapshot.TokenPath)
 		return snapshot
 	}
 	if !hasToken {
@@ -890,15 +1059,15 @@ func getProviderAuthSnapshot(providerName string) AuthSnapshot {
 	case "google":
 		client, err := google.NewOAuth2ClientFromHome()
 		if err != nil {
-			// Google 客户端加载失败时，保守认为已连接但无法判定有效性
+			//When the Google client fails to load, it is conservatively considered connected but the efficiency cannot be determined.
 			snapshot.Valid = nil
-			snapshot.ExpiresAt = "有效"
+			snapshot.ExpiresAt = "efficient"
 			return snapshot
 		}
 		info := client.GetTokenInfo()
 		if info == nil {
 			snapshot.Valid = nil
-			snapshot.ExpiresAt = "未知"
+			snapshot.ExpiresAt = "unknown"
 			return snapshot
 		}
 		if info.Valid {
@@ -908,7 +1077,7 @@ func getProviderAuthSnapshot(providerName string) AuthSnapshot {
 		}
 		snapshot.Valid = boolPtr(false)
 		snapshot.StatusText = "⚠️ Expired"
-		snapshot.ExpiresAt = "需刷新"
+		snapshot.ExpiresAt = "Need to refresh"
 		snapshot.NextAction = "taskbridge auth refresh google"
 		return snapshot
 	case "microsoft":
@@ -916,13 +1085,13 @@ func getProviderAuthSnapshot(providerName string) AuthSnapshot {
 		oauthClient, err := microsoft.LoadCredentials(credentialsPath)
 		if err != nil {
 			snapshot.Valid = nil
-			snapshot.ExpiresAt = "有效"
+			snapshot.ExpiresAt = "efficient"
 			return snapshot
 		}
 		oauthClient.SetTokenFile(snapshot.TokenPath)
 		if err := oauthClient.LoadToken(); err != nil {
 			snapshot.Valid = nil
-			snapshot.ExpiresAt = "有效"
+			snapshot.ExpiresAt = "efficient"
 			return snapshot
 		}
 		info := oauthClient.GetTokenInfo()
@@ -939,37 +1108,11 @@ func getProviderAuthSnapshot(providerName string) AuthSnapshot {
 			return snapshot
 		}
 		snapshot.Valid = nil
-		snapshot.ExpiresAt = "有效"
+		snapshot.ExpiresAt = "efficient"
 		return snapshot
 	default:
 		snapshot.Valid = nil
-		snapshot.ExpiresAt = "有效"
+		snapshot.ExpiresAt = "efficient"
 		return snapshot
 	}
-}
-
-// getProviderStatus 获取 Provider 认证状态
-// 优先检查 token 文件是否存在，而不是配置中的 Enabled 状态
-func getProviderStatus(providerName string) (status, user, expires string) {
-	snapshot := getProviderAuthSnapshot(providerName)
-	user = "-"
-	if snapshot.Authenticated {
-		user = "已认证"
-	}
-	return snapshot.StatusText, user, snapshot.ExpiresAt
-}
-
-// printAuthStatusTable 打印认证状态表格
-func printAuthStatusTable() {
-	// 使用 lipgloss table 组件
-	table := ui.NewTable("Provider", "简写", "状态", "Expires")
-
-	for _, p := range getAuthProviderOrder() {
-		snapshot := getProviderAuthSnapshot(p)
-		table.AddRow(snapshot.DisplayName, snapshot.ShortName, snapshot.StatusText, snapshot.ExpiresAt)
-	}
-
-	fmt.Println()
-	fmt.Println(table.Render())
-	fmt.Println()
 }

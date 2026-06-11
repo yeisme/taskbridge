@@ -6,9 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/yeisme/taskbridge/internal/auth"
+	"github.com/yeisme/taskbridge/internal/provider"
 	syncengine "github.com/yeisme/taskbridge/internal/sync"
 )
 
@@ -24,6 +27,61 @@ func (f *fakeScheduler) IsRunning() bool                                     { r
 func (f *fakeScheduler) GetStats() syncengine.SchedulerStats                 { return f.stats }
 func (f *fakeScheduler) NextRunTime() time.Time                              { return f.nextRun }
 func (f *fakeScheduler) Trigger(context.Context) (*syncengine.Result, error) { return f.result, f.err }
+
+type fakeTokenProvider struct {
+	name string
+	info *provider.TokenInfo
+}
+
+func (f fakeTokenProvider) Name() string { return f.name }
+func (f fakeTokenProvider) IsAuthenticated() bool {
+	return f.info != nil && f.info.HasToken && f.info.IsValid
+}
+func (f fakeTokenProvider) RefreshToken(context.Context) error { return nil }
+func (f fakeTokenProvider) GetTokenInfo() *provider.TokenInfo  { return f.info }
+
+func TestPrintTokenStatusUsesTableOutput(t *testing.T) {
+	tm := auth.NewTokenManager(auth.DefaultTokenManagerConfig())
+	tm.RegisterProvider(fakeTokenProvider{name: "google", info: &provider.TokenInfo{
+		Provider:        "google",
+		HasToken:        true,
+		IsValid:         true,
+		ExpiresAt:       time.Now().Add(2 * time.Hour),
+		TimeUntilExpiry: "2h0m0s",
+	}})
+
+	output := captureStdout(t, func() { printTokenStatus(tm) })
+
+	for _, want := range []string{"Token status", "Provider", "Status", "Expires", "Remaining", "google", "valid"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("token status output missing %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(strings.TrimSpace(output), "{") || strings.Contains(output, "┌") {
+		t.Fatalf("token status output should be table-like human text, not JSON or a manual box:\n%s", output)
+	}
+}
+
+func TestRunServeRejectsMachineOutputBeforeProgress(t *testing.T) {
+	oldJSON, oldAgent, oldEvents, oldExplain, oldQuiet := outputJSON, outputAgent, outputEvents, outputExplain, quiet
+	oldCheckInterval := serveCheckInterval
+	outputJSON, outputAgent, outputEvents, outputExplain, quiet = true, false, false, false, false
+	serveCheckInterval = "not-a-duration"
+	t.Cleanup(func() {
+		outputJSON, outputAgent, outputEvents, outputExplain, quiet = oldJSON, oldAgent, oldEvents, oldExplain, oldQuiet
+		serveCheckInterval = oldCheckInterval
+	})
+
+	var err error
+	stdout := captureStdout(t, func() { err = runServe(nil, nil) })
+
+	if err == nil || !strings.Contains(err.Error(), "serve does not support machine output") {
+		t.Fatalf("expected machine-output usage error, got %v", err)
+	}
+	if stdout != "" {
+		t.Fatalf("serve should reject machine output before printing progress, got:\n%s", stdout)
+	}
+}
 
 // TestHealthResponseStructure verifies the health endpoint returns valid
 // JSON with the required fields.
@@ -72,7 +130,7 @@ func TestHealthEndpointReturns200(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -95,7 +153,7 @@ func TestHealthEndpointContentTypeJSON(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	ct := resp.Header.Get("Content-Type")
 	if ct != "application/json" {
@@ -127,7 +185,7 @@ func TestHealthEndpointDegradedStatus(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 
 	var parsed map[string]interface{}
@@ -208,7 +266,9 @@ func TestHealthResponseSchedulerState(t *testing.T) {
 
 	data, _ := json.Marshal(health)
 	var parsed map[string]interface{}
-	json.Unmarshal(data, &parsed)
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("Unmarshal health: %v", err)
+	}
 
 	scheduler := parsed["scheduler"].(map[string]interface{})
 	if scheduler["running"] != true {
@@ -349,7 +409,7 @@ func TestServeHealthServerStartStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("health server request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)

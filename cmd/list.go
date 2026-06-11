@@ -8,11 +8,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/yeisme/taskbridge/internal/clioutput"
 	"github.com/yeisme/taskbridge/internal/model"
 	"github.com/yeisme/taskbridge/internal/provider"
 	"github.com/yeisme/taskbridge/internal/sync"
+	"github.com/yeisme/taskbridge/internal/taskoutput"
 	"github.com/yeisme/taskbridge/internal/taskquery"
-	"github.com/yeisme/taskbridge/pkg/output"
 )
 
 var (
@@ -33,26 +34,18 @@ var (
 	listFields   string
 )
 
-type listJSONOutput struct {
-	Tasks   interface{} `json:"tasks"`
-	Total   int         `json:"total"`
-	Limit   int         `json:"limit"`
-	Offset  int         `json:"offset"`
-	HasMore bool        `json:"has_more"`
-}
-
-// listCmd 列出任务命令
+// listCmd list tasks command
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "列出任务",
-	Long: `列出所有任务，支持按来源、状态、象限等条件筛选。
+	Short: "list tasks",
+	Long: `List all tasks and support filtering by source, status, quadrant, etc.
 
-输出格式:
-  - table: 表格格式（默认）
-  - json: JSON 格式
-  - markdown: Markdown 格式
+Output format:
+  - table: table format (default)
+  - json: JSON format
+  - markdown: Markdown format
 
-示例:
+Example:
   taskbridge list
   taskbridge list --format json
   taskbridge list --source google --status todo
@@ -64,21 +57,21 @@ var listCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(listCmd)
 
-	listCmd.Flags().StringVarP(&listSource, "source", "s", "", "按来源筛选（google, microsoft, feishu, ticktick, dida, todoist）")
-	listCmd.Flags().StringVarP(&listStatus, "status", "t", "", "按状态筛选（todo, in_progress, completed, cancelled）")
-	listCmd.Flags().StringVarP(&listFormat, "format", "f", "table", "输出格式（table, json, markdown, compact, tsv）")
-	listCmd.Flags().IntVarP(&listQuadrant, "quadrant", "q", 0, "按象限筛选（1-4）")
-	listCmd.Flags().IntVarP(&listPriority, "priority", "p", 0, "按优先级筛选（1-4）")
-	listCmd.Flags().StringVar(&listTag, "tag", "", "按标签筛选")
-	listCmd.Flags().StringArrayVar(&listNames, "list", nil, "按清单名称筛选（可重复指定）")
-	listCmd.Flags().StringArrayVar(&listIDs, "list-id", nil, "按清单 ID 筛选（可重复指定）")
-	listCmd.Flags().StringArrayVar(&listTaskIDs, "id", nil, "按任务 ID 筛选（可重复指定）")
-	listCmd.Flags().StringVar(&listQuery, "query", "", "按关键词/自然语言文本过滤（本地匹配）")
-	listCmd.Flags().BoolVarP(&listAll, "all", "a", false, "显示所有任务（包括已完成）")
-	listCmd.Flags().BoolVar(&listSyncNow, "sync-now", false, "查询前先同步远程任务到本地")
-	listCmd.Flags().IntVar(&listLimit, "limit", 0, "限制返回任务数量（0 表示全部）")
-	listCmd.Flags().IntVar(&listOffset, "offset", 0, "跳过前 N 个任务")
-	listCmd.Flags().StringVar(&listFields, "fields", "", "选择输出字段（逗号分隔，如: id,title,status）")
+	listCmd.Flags().StringVarP(&listSource, "source", "s", "", "Filter by source (google, microsoft, feishu, ticktick, dida, todoist)")
+	listCmd.Flags().StringVarP(&listStatus, "status", "t", "", "Filter by status (todo, in_progress, completed, canceled)")
+	listCmd.Flags().StringVarP(&listFormat, "format", "f", "table", "Output format (table, json, markdown, compact, tsv)")
+	listCmd.Flags().IntVarP(&listQuadrant, "quadrant", "q", 0, "Filter by quadrant (1-4)")
+	listCmd.Flags().IntVarP(&listPriority, "priority", "p", 0, "Filter by priority (1-4)")
+	listCmd.Flags().StringVar(&listTag, "tag", "", "Filter by tag")
+	listCmd.Flags().StringArrayVar(&listNames, "list", nil, "Filter by list name (can be specified repeatedly)")
+	listCmd.Flags().StringArrayVar(&listIDs, "list-id", nil, "Filter by list ID (can be specified repeatedly)")
+	listCmd.Flags().StringArrayVar(&listTaskIDs, "id", nil, "Filter by task ID (can be specified repeatedly)")
+	listCmd.Flags().StringVar(&listQuery, "query", "", "Filter by keyword/natural language text (local match)")
+	listCmd.Flags().BoolVarP(&listAll, "all", "a", false, "Show all tasks (including completed ones)")
+	listCmd.Flags().BoolVar(&listSyncNow, "sync-now", false, "Before querying, synchronize the remote task to the local")
+	listCmd.Flags().IntVar(&listLimit, "limit", 0, "Limit the number of returned tasks (0 means all)")
+	listCmd.Flags().IntVar(&listOffset, "offset", 0, "Skip first N tasks")
+	listCmd.Flags().StringVar(&listFields, "fields", "", "Select output fields (comma separated, such as: id, title, status)")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
@@ -104,33 +97,33 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	if listSyncNow {
 		if err := syncNowForList(ctx, listQuery.Source); err != nil {
-			return commandError("同步失败", err)
+			return commandError("Sync failed", err)
 		}
 	}
 
-	// 创建存储
+	//Create storage
 	store, cleanup, err := getStore()
 	if err != nil {
-		return commandError("创建存储失败", err)
+		return commandError("Failed to create storage", err)
 	}
 	defer cleanup()
 
-	// 查询全部匹配任务（不带 limit/offset，用于统计总数）
+	//Query all matching tasks (without limit/offset, used for total statistics)
 	allTasks, err := store.QueryTasks(ctx, listQuery.Query)
 	if err != nil {
-		return commandError("查询任务失败", err)
+		return commandError("Query task failed", err)
 	}
 	totalCount := len(allTasks)
 
-	// 构建输出上下文，自动检测管道/AI 模式
+	//Build output context and automatically detect pipelines/AI mode
 	limitChanged := cmd.Flags().Lookup("limit") != nil && cmd.Flags().Lookup("limit").Changed
 	effectiveLimit := listLimit
 	if !limitChanged {
-		oc := output.NewOutputContext(listFormat, nil, listLimit, listOffset, false)
+		oc := taskoutput.NewOutputContext(listFormat, nil, listLimit, listOffset, false)
 		effectiveLimit = oc.Limit
 	}
 
-	// 应用 offset/limit 切片
+	//Apply offset/limit slice
 	tasks := allTasks
 	if listOffset > 0 {
 		if listOffset >= len(tasks) {
@@ -141,57 +134,52 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 	if effectiveLimit > 0 && len(tasks) > effectiveLimit {
 		tasks = tasks[:effectiveLimit]
-	}
-
-	// 解析 --fields 参数
-	parsedFields, err := output.ParseFields(listFields)
+	} //Parsing the --fields parameter
+	parsedFields, err := taskoutput.ParseFields(listFields)
 	if err != nil {
 		return usageError(err.Error())
 	}
 
+	projection := taskoutput.NewTaskBrowseProjection("task.list", tasks, parsedFields, totalCount, effectiveLimit, listOffset)
+	if totalCount == 0 && listSyncNow {
+		projection.Actions = nil
+	}
+	if globalProjectionModeRequested() {
+		return printProjection(listFormat, projection, nil)
+	}
 	if listFormat == "json" {
 		return renderListJSON(tasks, parsedFields, totalCount, effectiveLimit, listOffset)
 	}
-
-	// 如果没有任务，显示提示
+	// If there are no tasks, display a human prompt.
 	if totalCount == 0 {
-		fmt.Println("📭 没有找到任务")
-		if !listSyncNow {
-			fmt.Println("💡 可尝试: taskbridge list --sync-now")
-		}
+		fmt.Fprint(os.Stdout, clioutput.RenderSummary(projection))
 		return nil
 	}
 
-	if err := output.RenderTasks(tasks, output.TaskRenderOptions{Format: listFormat, Fields: parsedFields, Writer: os.Stdout}); err != nil {
-		return commandError("输出任务失败", err)
+	if err := taskoutput.RenderTasks(tasks, taskoutput.TaskRenderOptions{Format: listFormat, Fields: parsedFields, Writer: os.Stdout}); err != nil {
+		return commandError("Output task failed", err)
 	}
 
-	// 分页提示：当有更多结果时
-	if effectiveLimit > 0 && totalCount > effectiveLimit {
-		fmt.Printf("共 %d 个任务（显示前 %d 条，使用 --limit 或 --offset 翻页）\n", totalCount, effectiveLimit)
+	//Pagination tip: when there are more results
+	if page, ok := projection.Data.(taskoutput.TaskBrowsePage); ok && page.HasMore {
+		fmt.Fprintf(os.Stdout, "Total %d tasks (display first %d, use --limit or --offset to page)\n", totalCount, len(tasks))
 	}
 
 	return nil
 }
 
 func renderListJSON(tasks []model.Task, fields []string, total, limit, offset int) error {
-	payload := listJSONOutput{
-		Tasks:   output.TaskJSONRows(tasks, fields),
-		Total:   total,
-		Limit:   limit,
-		Offset:  offset,
-		HasMore: offset+len(tasks) < total,
-	}
+	payload := taskoutput.NewTaskBrowseProjection("task.list", tasks, fields, total, limit, offset).Data
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
-		return commandError("序列化任务失败", err)
+		return commandError("Serialization task failed", err)
 	}
 	fmt.Fprintln(os.Stdout, string(data))
 	return nil
 }
 
 func syncNowForList(ctx context.Context, source string) error {
-	// 指定来源时，只同步该 Provider
+	//When specifying a source, only this Provider will be synchronized
 	if source != "" {
 		engine, err := getSyncEngineForProvider(source)
 		if err != nil {
@@ -202,9 +190,7 @@ func syncNowForList(ctx context.Context, source string) error {
 			Provider:  source,
 		})
 		return err
-	}
-
-	// 未指定来源时，尽量同步已认证 Provider
+	} //When no source is specified, try to synchronize the certified Provider
 	var synced int
 	for _, p := range provider.GetAllProviderNames() {
 		engine, err := getSyncEngineForProvider(p)
@@ -219,7 +205,7 @@ func syncNowForList(ctx context.Context, source string) error {
 		}
 	}
 	if synced == 0 {
-		return fmt.Errorf("未找到可同步的已认证 Provider")
+		return fmt.Errorf("no certified Provider found to sync with")
 	}
 	return nil
 }

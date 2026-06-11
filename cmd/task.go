@@ -2,14 +2,16 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/yeisme/taskbridge/internal/clioutput"
 	"github.com/yeisme/taskbridge/internal/model"
-	"github.com/yeisme/taskbridge/pkg/output"
+	"github.com/yeisme/taskbridge/internal/taskoutput"
 )
 
 var (
@@ -20,97 +22,97 @@ var (
 	taskFormat   string
 )
 
-// taskCmd 任务管理命令
+// taskCmd task management command
 var taskCmd = &cobra.Command{
 	Use:   "task",
-	Short: "任务管理",
-	Long: `管理本地任务。
+	Short: "task management",
+	Long: `Manage local tasks.
 
-子命令:
-  add      添加任务
-  edit     编辑任务
-  delete   删除任务
-  done     完成任务
-  show     显示任务详情
-  move     移动任务到其他列表
+Subcommands:
+  add      Add task
+  edit     Edit task
+  delete   Delete task
+  done     Complete the task
+  show     Show task details
+  move     Move task to another list
 
-示例:
-  taskbridge task add "完成报告" --due 2024-01-15 --priority 3
+Examples:
+  taskbridge task add "Complete report" --due 2024-01-15 --priority 3
   taskbridge task done <task-id>
   taskbridge task show <task-id>`,
 }
 
-// taskAddCmd 添加任务
+// taskAddCmd Add task
 var taskAddCmd = &cobra.Command{
 	Use:   "add <title>",
-	Short: "添加任务",
-	Long: `添加新任务到本地存储。
+	Short: "Add task",
+	Long: `Add a new task to local storage.
 
-示例:
-  taskbridge task add "完成项目报告"
-  taskbridge task add "回复邮件" --due 2024-01-15 --priority 3 --quadrant 1`,
+Examples:
+  taskbridge task add "Complete project report"
+  taskbridge task add "Reply to email" --due 2024-01-15 --priority 3 --quadrant 1`,
 	Args: cobra.ExactArgs(1),
 	RunE: runTaskAdd,
 }
 
-// taskEditCmd 编辑任务
+// taskEditCmd Edit task
 var taskEditCmd = &cobra.Command{
 	Use:   "edit <task-id>",
-	Short: "编辑任务",
-	Long: `编辑现有任务。
+	Short: "Edit task",
+	Long: `Edit an existing task.
 
-示例:
-  taskbridge task edit <task-id> --title "新标题"
+Examples:
+  taskbridge task edit <task-id> --title "New title"
   taskbridge task edit <task-id> --due 2024-01-20 --priority 2`,
 	Args: cobra.ExactArgs(1),
 	RunE: runTaskEdit,
 }
 
-// taskDeleteCmd 删除任务
+// taskDeleteCmd Delete task
 var taskDeleteCmd = &cobra.Command{
 	Use:   "delete <task-id>",
-	Short: "删除任务",
-	Long: `删除指定任务。
+	Short: "Delete task",
+	Long: `Delete the specified task.
 
-示例:
+Example:
   taskbridge task delete <task-id>
   taskbridge task delete <task-id> --force`,
 	Args: cobra.ExactArgs(1),
 	RunE: runTaskDelete,
 }
 
-// taskDoneCmd 完成任务
+// taskDoneCmd Complete the task
 var taskDoneCmd = &cobra.Command{
 	Use:   "done <task-id>",
-	Short: "完成任务",
-	Long: `将任务标记为已完成。
+	Short: "Complete the task",
+	Long: `Mark the task as completed.
 
-示例:
+Example:
   taskbridge task done <task-id>`,
 	Args: cobra.ExactArgs(1),
 	RunE: runTaskDone,
 }
 
-// taskShowCmd 显示任务详情
+// taskShowCmd Show task details
 var taskShowCmd = &cobra.Command{
 	Use:   "show <task-id>",
-	Short: "显示任务详情",
-	Long: `显示指定任务的详细信息。
+	Short: "Show task details",
+	Long: `Displays detailed information for a specified task.
 
-示例:
+Example:
   taskbridge task show <task-id>
   taskbridge task show <task-id> --format json`,
 	Args: cobra.ExactArgs(1),
 	RunE: runTaskShow,
 }
 
-// taskUndoCmd 撤销完成
+// taskUndoCmd Undo complete
 var taskUndoCmd = &cobra.Command{
 	Use:   "undo <task-id>",
-	Short: "撤销完成",
-	Long: `将已完成的任务恢复为未完成状态。
+	Short: "Undo complete",
+	Long: `Revert completed tasks to unfinished status.
 
-示例:
+Example:
   taskbridge task undo <task-id>`,
 	Args: cobra.ExactArgs(1),
 	RunE: runTaskUndo,
@@ -125,37 +127,35 @@ func init() {
 	taskCmd.AddCommand(taskShowCmd)
 	taskCmd.AddCommand(taskUndoCmd)
 
-	// add 命令选项
-	taskAddCmd.Flags().StringVar(&taskListID, "list", "", "任务列表 ID")
-	taskAddCmd.Flags().StringVar(&taskDueDate, "due", "", "截止日期 (YYYY-MM-DD)")
-	taskAddCmd.Flags().IntVarP(&taskPriority, "priority", "p", 0, "优先级 (1-4)")
-	taskAddCmd.Flags().IntVarP(&taskQuadrant, "quadrant", "q", 0, "象限 (1-4)")
+	//add command options
+	taskAddCmd.Flags().StringVar(&taskListID, "list", "", "Task list ID")
+	taskAddCmd.Flags().StringVar(&taskDueDate, "due", "", "Deadline (YYYY-MM-DD)")
+	taskAddCmd.Flags().IntVarP(&taskPriority, "priority", "p", 0, "Priority (1-4)")
+	taskAddCmd.Flags().IntVarP(&taskQuadrant, "quadrant", "q", 0, "Quadrant (1-4)")
 
-	// edit 命令选项
-	taskEditCmd.Flags().String("title", "", "新标题")
-	taskEditCmd.Flags().StringVar(&taskDueDate, "due", "", "截止日期 (YYYY-MM-DD)")
-	taskEditCmd.Flags().IntVarP(&taskPriority, "priority", "p", 0, "优先级 (1-4)")
-	taskEditCmd.Flags().IntVarP(&taskQuadrant, "quadrant", "q", 0, "象限 (1-4)")
+	taskEditCmd.Flags().String("title", "", "New title")
+	taskEditCmd.Flags().StringVar(&taskDueDate, "due", "", "Deadline (YYYY-MM-DD)")
+	taskEditCmd.Flags().IntVarP(&taskPriority, "priority", "p", 0, "Priority (1-4)")
+	taskEditCmd.Flags().IntVarP(&taskQuadrant, "quadrant", "q", 0, "Quadrant (1-4)")
 
-	// show 命令选项
-	taskShowCmd.Flags().StringVarP(&taskFormat, "format", "f", "text", "输出格式 (text, json)")
+	//show command options
+	taskShowCmd.Flags().StringVarP(&taskFormat, "format", "f", "text", "Output format (text, json)")
 
-	// delete 命令选项
-	taskDeleteCmd.Flags().Bool("force", false, "强制删除，不确认")
+	taskDeleteCmd.Flags().Bool("force", false, "Delete without confirmation")
 }
 
 func runTaskAdd(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	title := args[0]
 
-	// 创建存储
+	//Create storage
 	store, cleanup, err := getStore()
 	if err != nil {
-		return commandError("创建存储失败", err)
+		return commandError("Failed to create storage", err)
 	}
 	defer cleanup()
 
-	// 创建任务
+	//Create tasks
 	task := &model.Task{
 		ID:        generateID(),
 		Title:     title,
@@ -166,58 +166,52 @@ func runTaskAdd(cmd *cobra.Command, args []string) error {
 		ListID:    taskListID,
 		Priority:  model.Priority(taskPriority),
 		Quadrant:  model.Quadrant(taskQuadrant),
-	}
-
-	// 解析截止日期
+	} //parse deadline
 	if taskDueDate != "" {
 		due, err := time.Parse("2006-01-02", taskDueDate)
 		if err != nil {
-			return commandError("无效的日期格式", err)
+			return commandError("Invalid date format", err)
 		}
 		task.DueDate = &due
 	}
 
-	// 计算优先级分数
-	task.CalculatePriorityScore()
-
-	// 保存任务
+	//Calculate priority score
+	task.CalculatePriorityScore() //Save task
 	if err := store.SaveTask(ctx, task); err != nil {
-		return commandError("保存任务失败", err)
+		return commandError("Failed to save task", err)
 	}
 
-	if IsQuietMode() {
-		fmt.Printf("%s:%s:%s\n", task.ID, task.Title, task.Status)
-	} else {
-		fmt.Printf("✅ 任务已创建: %s (ID: %s)\n", title, task.ID)
-	}
-	return nil
+	projection := buildTaskWriteReceipt("task.add", "created", *task)
+	return printProjection("text", projection, func() {
+		fmt.Print(renderTaskWriteReceipt(projection))
+	})
 }
 
 func runTaskEdit(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskID := args[0]
 
-	// 创建存储
+	//Create storage
 	store, cleanup, err := getStore()
 	if err != nil {
-		return commandError("创建存储失败", err)
+		return commandError("Failed to create storage", err)
 	}
 	defer cleanup()
 
-	// 获取任务
+	//Get tasks
 	task, err := store.GetTask(ctx, taskID)
 	if err != nil {
-		return commandError("获取任务失败", err)
+		return commandError("Failed to get task", err)
 	}
 
-	// 更新字段
+	//Update field
 	if title, _ := cmd.Flags().GetString("title"); title != "" {
 		task.Title = title
 	}
 	if taskDueDate != "" {
 		due, err := time.Parse("2006-01-02", taskDueDate)
 		if err != nil {
-			return commandError("无效的日期格式", err)
+			return commandError("Invalid date format", err)
 		}
 		task.DueDate = &due
 	}
@@ -231,197 +225,235 @@ func runTaskEdit(cmd *cobra.Command, args []string) error {
 	task.UpdatedAt = time.Now()
 	task.CalculatePriorityScore()
 
-	// 保存任务
+	//Save task
 	if err := store.SaveTask(ctx, task); err != nil {
-		return commandError("保存任务失败", err)
+		return commandError("Failed to save task", err)
 	}
 
-	if IsQuietMode() {
-		fmt.Printf("%s:%s:%s\n", task.ID, task.Title, task.Status)
-	} else {
-		fmt.Printf("✅ 任务已更新: %s\n", task.ID)
-	}
-	return nil
+	projection := buildTaskWriteReceipt("task.edit", "updated", *task)
+	return printProjection("text", projection, func() {
+		fmt.Print(renderTaskWriteReceipt(projection))
+	})
 }
 
 func runTaskDelete(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskID := args[0]
 
-	// 创建存储
+	//Create storage
 	store, cleanup, err := getStore()
 	if err != nil {
-		return commandError("创建存储失败", err)
+		return commandError("Failed to create storage", err)
 	}
 	defer cleanup()
 
-	// 检查任务是否存在
+	//Check if the task exists
 	task, err := store.GetTask(ctx, taskID)
 	if err != nil {
-		return commandError("任务不存在", err)
+		return commandError("Task does not exist", err)
 	}
 
-	// 确认删除
+	//Confirm deletion
 	force, _ := cmd.Flags().GetBool("force")
 	if !force {
-		fmt.Printf("确定要删除任务 \"%s\" 吗? (y/N): ", task.Title)
+		promptWriter := taskConfirmationWriter()
+		fmt.Fprintf(promptWriter, "Delete task %q? (y/N): ", task.Title)
 		var confirm string
 		if _, err := fmt.Scanln(&confirm); err != nil {
-			fmt.Println("已取消")
+			fmt.Fprintln(promptWriter, "Canceled")
 			return nil
 		}
 		if confirm != "y" && confirm != "Y" {
-			fmt.Println("已取消")
+			fmt.Fprintln(promptWriter, "Canceled")
 			return nil
 		}
 	}
 
-	// 删除任务
+	// Delete task
 	if err := store.DeleteTask(ctx, taskID); err != nil {
-		return commandError("删除任务失败", err)
+		return commandError("Failed to delete task", err)
 	}
 
-	if IsQuietMode() {
-		fmt.Printf("%s:%s:deleted\n", taskID, task.Title)
-	} else {
-		fmt.Printf("✅ 任务已删除: %s\n", taskID)
-	}
-	return nil
+	projection := buildTaskWriteReceipt("task.delete", "deleted", *task)
+	return printProjection("text", projection, func() {
+		fmt.Print(renderTaskWriteReceipt(projection))
+	})
 }
 
 func runTaskDone(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskID := args[0]
 
-	// 创建存储
+	//Create storage
 	store, cleanup, err := getStore()
 	if err != nil {
-		return commandError("创建存储失败", err)
+		return commandError("Failed to create storage", err)
 	}
 	defer cleanup()
 
-	// 获取任务
+	//Get tasks
 	task, err := store.GetTask(ctx, taskID)
 	if err != nil {
-		return commandError("获取任务失败", err)
+		return commandError("Failed to get task", err)
 	}
 
-	// 标记完成
+	//Mark complete
 	now := time.Now()
 	task.Status = model.StatusCompleted
 	task.CompletedAt = &now
 	task.UpdatedAt = now
 
-	// 保存任务
+	//Save task
 	if err := store.SaveTask(ctx, task); err != nil {
-		return commandError("保存任务失败", err)
+		return commandError("Failed to save task", err)
 	}
 
-	if IsQuietMode() {
-		fmt.Printf("%s:%s:%s\n", task.ID, task.Title, task.Status)
-	} else {
-		fmt.Printf("✅ 任务已完成: %s\n", task.Title)
-	}
-	return nil
+	projection := buildTaskWriteReceipt("task.done", "completed", *task)
+	return printProjection("text", projection, func() {
+		fmt.Print(renderTaskWriteReceipt(projection))
+	})
 }
 
 func runTaskUndo(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskID := args[0]
 
-	// 创建存储
+	//Create storage
 	store, cleanup, err := getStore()
 	if err != nil {
-		return commandError("创建存储失败", err)
+		return commandError("Failed to create storage", err)
 	}
 	defer cleanup()
 
-	// 获取任务
+	//Get tasks
 	task, err := store.GetTask(ctx, taskID)
 	if err != nil {
-		return commandError("获取任务失败", err)
+		return commandError("Failed to get task", err)
 	}
 
-	// 撤销完成
+	// Undo complete
 	task.Status = model.StatusTodo
 	task.CompletedAt = nil
 	task.UpdatedAt = time.Now()
 
-	// 保存任务
+	//Save task
 	if err := store.SaveTask(ctx, task); err != nil {
-		return commandError("保存任务失败", err)
+		return commandError("Failed to save task", err)
 	}
 
-	if IsQuietMode() {
-		fmt.Printf("%s:%s:%s\n", task.ID, task.Title, task.Status)
-	} else {
-		fmt.Printf("✅ 任务已恢复: %s\n", task.Title)
-	}
-	return nil
+	projection := buildTaskWriteReceipt("task.undo", "reopened", *task)
+	return printProjection("text", projection, func() {
+		fmt.Print(renderTaskWriteReceipt(projection))
+	})
 }
 
 func runTaskShow(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskID := args[0]
 
-	// 创建存储
+	//Create storage
 	store, cleanup, err := getStore()
 	if err != nil {
-		return commandError("创建存储失败", err)
+		return commandError("Failed to create storage", err)
 	}
 	defer cleanup()
 
-	// 获取任务
+	//Get tasks
 	task, err := store.GetTask(ctx, taskID)
 	if err != nil {
-		return commandError("获取任务失败", err)
+		return commandError("Failed to get task", err)
 	}
 
-	if taskFormat == "json" {
-		data, _ := json.MarshalIndent(task, "", "  ")
-		fmt.Println(string(data))
-		return nil
-	}
-
-	// 文本格式
-	fmt.Println()
-	fmt.Printf("📋 任务详情\n")
-	fmt.Println("   ─────────────────────────────────")
-	fmt.Printf("   ID:       %s\n", task.ID)
-	fmt.Printf("   标题:     %s\n", task.Title)
-	fmt.Printf("   状态:     %s\n", output.StatusShort(task.Status))
-	fmt.Printf("   优先级:   %s\n", task.Priority.String())
-	fmt.Printf("   象限:     %s\n", task.Quadrant.String())
-
-	if task.DueDate != nil {
-		fmt.Printf("   截止日期: %s\n", task.DueDate.Format("2006-01-02"))
-	}
-	if task.ListName != "" {
-		fmt.Printf("   列表:     %s\n", task.ListName)
-	}
-	if len(task.Tags) > 0 {
-		fmt.Printf("   标签:     %v\n", task.Tags)
-	}
-	if task.Progress > 0 {
-		fmt.Printf("   进度:     %d%%\n", task.Progress)
-	}
-	if task.Description != "" {
-		fmt.Printf("   描述:     %s\n", task.Description)
-	}
-
-	fmt.Printf("   来源:     %s\n", task.Source)
-	fmt.Printf("   创建时间: %s\n", task.CreatedAt.Format("2006-01-02 15:04:05"))
-	fmt.Printf("   更新时间: %s\n", task.UpdatedAt.Format("2006-01-02 15:04:05"))
-
-	if task.CompletedAt != nil {
-		fmt.Printf("   完成时间: %s\n", task.CompletedAt.Format("2006-01-02 15:04:05"))
-	}
-
-	fmt.Println()
-	return nil
+	projection := buildTaskDetailProjection(*task)
+	return printProjection(taskFormat, projection, func() {
+		fmt.Print(renderTaskDetail(projection))
+	})
 }
 
-// generateID 生成任务 ID
+func buildTaskWriteReceipt(command, operation string, task model.Task) clioutput.Projection {
+	taskProjection := taskoutput.ToTaskProjection(task)
+	projection := clioutput.New(command)
+	projection.Summary = fmt.Sprintf("Task %s.", operation)
+	projection.Facts["operation"] = operation
+	projection.Facts["task_id"] = task.ID
+	projection.Facts["title"] = task.Title
+	projection.Facts["status"] = string(task.Status)
+	projection.Facts["source"] = string(task.Source)
+	projection.Data = map[string]any{
+		"operation": operation,
+		"task":      taskProjection,
+	}
+	projection.Evidence = []string{task.ID}
+	return projection
+}
+
+func buildTaskDetailProjection(task model.Task) clioutput.Projection {
+	taskProjection := taskoutput.ToTaskProjection(task)
+	projection := clioutput.New("task.show")
+	projection.Summary = "Task details loaded."
+	projection.Facts["task_id"] = task.ID
+	projection.Facts["title"] = task.Title
+	projection.Facts["status"] = string(task.Status)
+	projection.Facts["source"] = string(task.Source)
+	if taskProjection.DueDate != "" {
+		projection.Facts["due_date"] = taskProjection.DueDate
+	}
+	projection.Data = map[string]any{
+		"task": taskProjection,
+	}
+	projection.Preview = []clioutput.PreviewItem{
+		{Label: "ID", Value: taskProjection.ID},
+		{Label: "Title", Value: taskProjection.Title},
+		{Label: "Status", Value: taskProjection.Status},
+		{Label: "Priority", Value: taskProjection.Priority},
+		{Label: "Quadrant", Value: taskProjection.Quadrant},
+		{Label: "Due date", Value: taskProjection.DueDate},
+		{Label: "List", Value: taskProjection.ListName},
+		{Label: "Tags", Value: fmt.Sprint(taskProjection.Tags)},
+		{Label: "Progress", Value: taskProgressValue(taskProjection.Progress)},
+		{Label: "Source", Value: taskProjection.Source},
+	}
+	return projection
+}
+
+func renderTaskWriteReceipt(projection clioutput.Projection) string {
+	return clioutput.RenderSummary(projection)
+}
+
+func renderTaskDetail(projection clioutput.Projection) string {
+	if len(projection.Preview) == 0 {
+		return clioutput.RenderSummary(projection)
+	}
+	var b strings.Builder
+	b.WriteString("Task details\n")
+	for _, item := range projection.Preview {
+		if item.Value == "" || item.Value == "[]" {
+			continue
+		}
+		fmt.Fprintf(&b, "- %s: %s\n", item.Label, item.Value)
+	}
+	return b.String()
+}
+
+func taskProgressValue(progress int) string {
+	if progress <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d%%", progress)
+}
+
+func taskConfirmationWriter() *os.File {
+	switch resolveOutputFormat("text") {
+	case "json", "agent", "ai", "events", "explain":
+		return os.Stderr
+	}
+	if IsQuietMode() {
+		return os.Stderr
+	}
+	return os.Stdout
+}
+
+// generateID Generate task ID
 func generateID() string {
 	return fmt.Sprintf("task_%d", time.Now().UnixNano())
 }

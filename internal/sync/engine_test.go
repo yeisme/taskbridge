@@ -768,6 +768,14 @@ func TestDryRun(t *testing.T) {
 	if len(tasks) != 0 {
 		t.Errorf("Expected 0 tasks in storage (dry run), got %d", len(tasks))
 	}
+
+	lastSync, err := store.GetLastSyncTime(context.Background(), model.TaskSource("mock"))
+	if err != nil {
+		t.Fatalf("GetLastSyncTime: %v", err)
+	}
+	if lastSync != nil {
+		t.Fatalf("dry run advanced last sync time: %v", lastSync)
+	}
 }
 
 // TestResult 测试同步结果

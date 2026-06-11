@@ -2,6 +2,19 @@
 
 本文档详细介绍如何配置和连接各个 Todo 平台 provider。
 
+## 快速选择
+
+| Provider | 认证方式 | 配置难度 | 推荐场景 |
+| --- | --- | --- | --- |
+| [Todoist](#todoist) | API Token | ⭐ 简单 | 个人任务管理，快速上手 |
+| [TickTick](#ticktick) | OpenAPI Token | ⭐ 简单 | 四象限爱好者 |
+| [滴答清单](#滴答清单-dida365) | OpenAPI Token | ⭐ 简单 | 国内用户，四象限 |
+| [Microsoft Todo](#microsoft-todo) | OAuth 2.0 | ⭐⭐ 中等 | Microsoft 365 用户 |
+| [Google Tasks](#google-tasks) | OAuth 2.0 | ⭐⭐ 中等 | Google 生态用户 |
+| [飞书任务](#飞书任务) | OAuth 2.0 | ⭐⭐⭐ 复杂 | 飞书团队协作 |
+
+推荐首次使用从 Todoist 或 TickTick 开始，只需一个 API Token 即可。
+
 ## 目录
 
 - [Google Tasks](#google-tasks)
@@ -10,6 +23,27 @@
 - [TickTick](#ticktick)
 - [滴答清单 (Dida365)](#滴答清单-dida365)
 - [Todoist](#todoist)
+- [多 Provider 共存](#多-provider-共存)
+- [常用命令](#常用命令)
+- [故障排除](#故障排除)
+
+## 凭证文件路径汇总
+
+```
+~/.taskbridge/
+├── config.yaml                  # 主配置文件
+├── credentials/                 # OAuth 凭证（需手动创建）
+│   ├── google.json             # Google OAuth 客户端凭证
+│   ├── microsoft.json          # Azure AD 应用凭证
+│   └── feishu.json             # 飞书自建应用凭证
+└── tokens/                      # 认证 token（自动生成）
+    ├── google.json
+    ├── microsoft.json
+    ├── feishu.json
+    ├── ticktick.json
+    ├── dida.json
+    └── todoist.json
+```
 
 ---
 
@@ -50,7 +84,7 @@
 
 ### 步骤 5: 保存凭证文件
 
-创建凭证文件 `~/.taskbridge/credentials/google.json`：
+创建凭证文件 `~/.taskbridge/credentials/google_credentials.json`：
 
 ```json
 {
@@ -66,7 +100,13 @@
 taskbridge auth login google
 ```
 
-系统会自动打开浏览器进行 OAuth 授权，完成后 token 将保存到 `~/.taskbridge/tokens/google.json`。
+系统会自动打开浏览器进行 OAuth 授权，完成后 token 将保存到统一 token store：`~/.taskbridge/credentials/tokens.json`。
+
+### 步骤 7: 验证连接
+
+```bash
+taskbridge provider test google
+```
 
 ---
 
@@ -111,7 +151,7 @@ taskbridge auth login google
 
 ### 步骤 5: 保存凭证文件
 
-创建凭证文件 `~/.taskbridge/credentials/microsoft.json`：
+创建凭证文件 `~/.taskbridge/credentials/microsoft_credentials.json`：
 
 ```json
 {
@@ -126,6 +166,12 @@ taskbridge auth login google
 
 ```bash
 taskbridge auth login microsoft
+```
+
+### 步骤 7: 验证连接
+
+```bash
+taskbridge provider test microsoft
 ```
 
 ---
@@ -166,7 +212,7 @@ taskbridge auth login microsoft
 
 ### 步骤 5: 保存凭证文件
 
-创建凭证文件 `~/.taskbridge/credentials/feishu.json`：
+创建凭证文件 `~/.taskbridge/credentials/feishu_credentials.json`：
 
 ```json
 {
@@ -188,6 +234,12 @@ taskbridge auth login microsoft
 taskbridge auth login feishu
 ```
 
+### 步骤 7: 验证连接
+
+```bash
+taskbridge provider test feishu
+```
+
 ---
 
 ## TickTick
@@ -207,7 +259,13 @@ TickTick 使用官方 OpenAPI Token 认证。
 taskbridge auth login ticktick
 ```
 
-按提示输入 API Token，认证成功后 token 将保存到 `~/.taskbridge/tokens/ticktick.json`。
+按提示输入 API Token，认证成功后 token 将保存到统一 token store：`~/.taskbridge/credentials/tokens.json`。
+
+### 步骤 3: 验证连接
+
+```bash
+taskbridge provider test ticktick
+```
 
 ### 注意事项
 
@@ -231,6 +289,12 @@ taskbridge auth login ticktick
 
 ```bash
 taskbridge auth login dida
+```
+
+### 步骤 3: 验证连接
+
+```bash
+taskbridge provider test dida
 ```
 
 ### 别名支持
@@ -262,6 +326,47 @@ taskbridge auth login todoist
 ```
 
 按提示输入 API Token。
+
+### 步骤 3: 验证连接
+
+```bash
+taskbridge provider test todoist
+```
+
+---
+
+## 多 Provider 共存
+
+TaskBridge 支持同时连接多个 Provider。启用方式：
+
+```bash
+# 启用多个 Provider
+taskbridge provider enable microsoft
+taskbridge provider enable todoist
+taskbridge provider enable ticktick
+
+# 设置环境变量
+export TASKBRIDGE_PROVIDERS=microsoft,todoist,ticktick
+
+# 查看所有 Provider 状态
+taskbridge auth status
+
+# 按需同步不同 Provider
+taskbridge sync pull microsoft
+taskbridge sync pull todoist
+```
+
+### 跨 Provider 同步
+
+```bash
+# 查看 Microsoft 和 Todoist 之间的差异
+taskbridge sync diff microsoft --target todoist --format json
+
+# 双向同步
+taskbridge sync bidirectional microsoft
+```
+
+每个 Provider 的任务通过 `source` 字段区分来源，不会混淆。
 
 ---
 
@@ -341,6 +446,26 @@ taskbridge auth login <provider>
 ### 权限不足
 
 确保在各个平台配置了正确的 API 权限/作用域。
+
+### 同步异常
+
+```bash
+# 检查 Provider 连接
+taskbridge provider test <provider>
+
+# 查看同步状态
+taskbridge sync status
+
+# 查看同步冲突
+taskbridge sync conflicts
+```
+
+### 全局诊断
+
+```bash
+taskbridge doctor
+taskbridge doctor --format json
+```
 
 ---
 

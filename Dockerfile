@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git make gcc musl-dev
@@ -19,6 +19,7 @@ ARG VERSION=dev
 ARG COMMIT=none
 ARG DATE=unknown
 RUN CGO_ENABLED=0 GOOS=linux go build \
+    -trimpath \
     -ldflags="-s -w -X github.com/yeisme/taskbridge/pkg/buildinfo.Version=${VERSION} -X github.com/yeisme/taskbridge/pkg/buildinfo.GitCommit=${COMMIT} -X github.com/yeisme/taskbridge/pkg/buildinfo.BuildDate=${DATE}" \
     -o taskbridge .
 

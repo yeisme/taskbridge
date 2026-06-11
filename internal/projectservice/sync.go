@@ -63,16 +63,18 @@ func (s *SyncService) SyncProject(ctx context.Context, projectID string, p provi
 		syncengine.PushProjectLocalTasks(ctx, s.TaskStore, p, projectTasks, defaultListID, targetSource, false, result)
 	}
 
-	item, err := s.ProjectStore.GetProject(ctx, projectID)
-	if err == nil {
-		item.Status = project.StatusSynced
-		if err := s.ProjectStore.SaveProject(ctx, item); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("save project status: %v", err))
+	if len(result.Errors) == 0 {
+		item, err := s.ProjectStore.GetProject(ctx, projectID)
+		if err == nil {
+			item.Status = project.StatusSynced
+			if err := s.ProjectStore.SaveProject(ctx, item); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("save project status: %v", err))
+			} else {
+				result.Status = string(project.StatusSynced)
+			}
 		} else {
-			result.Status = string(project.StatusSynced)
+			result.Errors = append(result.Errors, fmt.Sprintf("reload project: %v", err))
 		}
-	} else {
-		result.Errors = append(result.Errors, fmt.Sprintf("reload project: %v", err))
 	}
 	if len(result.Errors) > 0 {
 		result.Message = fmt.Sprintf("项目同步到 %s，但存在本地保存错误", providerName)

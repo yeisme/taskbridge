@@ -8,10 +8,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/yeisme/taskbridge/internal/clioutput"
 	"github.com/yeisme/taskbridge/internal/project"
 	"github.com/yeisme/taskbridge/internal/projectservice"
 	"github.com/yeisme/taskbridge/internal/provider"
 	"github.com/yeisme/taskbridge/internal/storage"
+	syncengine "github.com/yeisme/taskbridge/internal/sync"
+	"github.com/yeisme/taskbridge/pkg/ui"
 )
 
 var (
@@ -40,19 +43,19 @@ var (
 
 var projectCmd = &cobra.Command{
 	Use:   "project",
-	Short: "项目规划与落地",
-	Long: `管理项目草稿、拆分建议和按项目同步的 CLI 工作流。
+	Short: "Project planning and implementation",
+	Long: `Manage project drafts, split suggestions, confirmation, and per-project sync workflows.
 
-子命令:
-  create          创建项目草稿
-  list            列出项目
-  split           生成拆分建议
-  split-markdown  从 Markdown 任务树生成拆分建议
-  confirm         确认计划并落库任务
-  sync            仅同步指定项目的任务
+Subcommands:
+  create          Create a project draft
+  list            List projects
+  split           Generate split recommendations
+  split-markdown  Generate split recommendations from a Markdown task tree
+  confirm         Confirm a plan and optionally write tasks
+  sync            Sync tasks for one project
 
-示例:
-  taskbridge project create "学习 OpenClaw" --goal-text "我希望学习 openclaw"
+Examples:
+  taskbridge project create "Learn OpenClaw" --goal-text "I want to learn openclaw"
   taskbridge project split <project-id> --max-tasks 10
   taskbridge project confirm <project-id> --write-tasks
   taskbridge project sync <project-id> --provider google`,
@@ -60,41 +63,41 @@ var projectCmd = &cobra.Command{
 
 var projectCreateCmd = &cobra.Command{
 	Use:   "create <name>",
-	Short: "创建项目草稿",
+	Short: "Create a project draft",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runProjectCreate,
 }
 
 var projectListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "列出项目",
+	Short: "List projects",
 	RunE:  runProjectList,
 }
 
 var projectSplitCmd = &cobra.Command{
 	Use:   "split <project-id>",
-	Short: "生成拆分建议",
+	Short: "Generate split recommendations",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runProjectSplit,
 }
 
 var projectSplitMarkdownCmd = &cobra.Command{
 	Use:   "split-markdown <project-id>",
-	Short: "从 Markdown 任务树生成拆分建议",
+	Short: "Generate split recommendations from a Markdown task tree",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runProjectSplitMarkdown,
 }
 
 var projectConfirmCmd = &cobra.Command{
 	Use:   "confirm <project-id>",
-	Short: "确认项目并落库任务",
+	Short: "Confirm the project and release tasks",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runProjectConfirm,
 }
 
 var projectSyncCmd = &cobra.Command{
 	Use:   "sync <project-id>",
-	Short: "同步指定项目任务到 Provider",
+	Short: "Synchronize specified project tasks to Provider",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runProjectSync,
 }
@@ -109,38 +112,38 @@ func init() {
 	projectCmd.AddCommand(projectSyncCmd)
 
 	for _, cmd := range []*cobra.Command{projectCreateCmd, projectListCmd, projectSplitCmd, projectSplitMarkdownCmd, projectConfirmCmd, projectSyncCmd} {
-		cmd.Flags().StringVarP(&projectFormat, "format", "f", "text", "输出格式 (text, json)")
+		cmd.Flags().StringVarP(&projectFormat, "format", "f", "text", "Output format (text, json)")
 	}
 
-	projectCreateCmd.Flags().StringVar(&projectDescription, "description", "", "项目描述")
-	projectCreateCmd.Flags().StringVar(&projectParentID, "parent-id", "", "父项目 ID")
-	projectCreateCmd.Flags().StringVar(&projectGoalText, "goal-text", "", "自然语言目标")
-	projectCreateCmd.Flags().IntVar(&projectHorizonDays, "horizon-days", 14, "规划周期天数")
-	projectCreateCmd.Flags().StringVar(&projectListID, "list-id", "", "默认任务清单 ID")
-	projectCreateCmd.Flags().StringVar(&projectSource, "source", "", "目标来源（支持简写）")
+	projectCreateCmd.Flags().StringVar(&projectDescription, "description", "", "Project description")
+	projectCreateCmd.Flags().StringVar(&projectParentID, "parent-id", "", "Parent project ID")
+	projectCreateCmd.Flags().StringVar(&projectGoalText, "goal-text", "", "Natural language goal")
+	projectCreateCmd.Flags().IntVar(&projectHorizonDays, "horizon-days", 14, "Planning cycle days")
+	projectCreateCmd.Flags().StringVar(&projectListID, "list-id", "", "Default task list ID")
+	projectCreateCmd.Flags().StringVar(&projectSource, "source", "", "Target source (abbreviation supported)")
 
-	projectListCmd.Flags().StringVar(&projectStatusFilter, "status", "", "按状态过滤")
+	projectListCmd.Flags().StringVar(&projectStatusFilter, "status", "", "Filter by status")
 
-	projectSplitCmd.Flags().StringVar(&projectAIHint, "ai-hint", "", "拆分提示")
-	projectSplitCmd.Flags().StringVar(&projectGoalText, "goal-text", "", "临时覆盖目标文本")
-	projectSplitCmd.Flags().IntVar(&projectHorizonDays, "horizon-days", 0, "临时覆盖规划周期")
-	projectSplitCmd.Flags().IntVar(&projectMaxTasks, "max-tasks", 12, "最大拆分任务数")
-	projectSplitCmd.Flags().BoolVar(&projectRequireDeliverable, "require-deliverable", false, "强制每个子任务有交付物")
-	projectSplitCmd.Flags().IntVar(&projectMinEstimateMinutes, "min-estimate-minutes", 0, "最小时长")
-	projectSplitCmd.Flags().IntVar(&projectMaxEstimateMinutes, "max-estimate-minutes", 0, "最大时长")
-	projectSplitCmd.Flags().IntVar(&projectMinTasks, "min-tasks", 0, "最少任务数")
-	projectSplitCmd.Flags().IntVar(&projectConstraintMaxTasks, "constraint-max-tasks", 0, "约束里的最多任务数")
-	projectSplitCmd.Flags().IntVar(&projectMinPracticeTasks, "min-practice-tasks", 0, "最少实战任务数")
+	projectSplitCmd.Flags().StringVar(&projectAIHint, "ai-hint", "", "Split hint")
+	projectSplitCmd.Flags().StringVar(&projectGoalText, "goal-text", "", "Temporarily overwrite target text")
+	projectSplitCmd.Flags().IntVar(&projectHorizonDays, "horizon-days", 0, "Temporary coverage planning cycle")
+	projectSplitCmd.Flags().IntVar(&projectMaxTasks, "max-tasks", 12, "Maximum number of split tasks")
+	projectSplitCmd.Flags().BoolVar(&projectRequireDeliverable, "require-deliverable", false, "Enforce deliverables for each subtask")
+	projectSplitCmd.Flags().IntVar(&projectMinEstimateMinutes, "min-estimate-minutes", 0, "Minimum duration")
+	projectSplitCmd.Flags().IntVar(&projectMaxEstimateMinutes, "max-estimate-minutes", 0, "Maximum duration")
+	projectSplitCmd.Flags().IntVar(&projectMinTasks, "min-tasks", 0, "Minimum number of tasks")
+	projectSplitCmd.Flags().IntVar(&projectConstraintMaxTasks, "constraint-max-tasks", 0, "Constraint maximum task count")
+	projectSplitCmd.Flags().IntVar(&projectMinPracticeTasks, "min-practice-tasks", 0, "Minimum number of actual combat tasks")
 
-	projectSplitMarkdownCmd.Flags().StringVar(&projectMarkdownFile, "file", "", "Markdown 文件路径")
-	projectSplitMarkdownCmd.Flags().StringVar(&projectMarkdownInline, "markdown", "", "内联 Markdown 文本")
-	projectSplitMarkdownCmd.Flags().IntVar(&projectHorizonDays, "horizon-days", 0, "临时覆盖规划周期")
-	projectSplitMarkdownCmd.Flags().IntVar(&projectMaxTasks, "max-tasks", 200, "最多保留任务数")
+	projectSplitMarkdownCmd.Flags().StringVar(&projectMarkdownFile, "file", "", "Markdown file path")
+	projectSplitMarkdownCmd.Flags().StringVar(&projectMarkdownInline, "markdown", "", "Inline Markdown text")
+	projectSplitMarkdownCmd.Flags().IntVar(&projectHorizonDays, "horizon-days", 0, "Temporary coverage planning cycle")
+	projectSplitMarkdownCmd.Flags().IntVar(&projectMaxTasks, "max-tasks", 200, "Maximum number of retained tasks")
 
-	projectConfirmCmd.Flags().StringVar(&projectPlanID, "plan-id", "", "指定计划 ID")
-	projectConfirmCmd.Flags().BoolVar(&projectWriteTasks, "write-tasks", true, "是否写入本地任务")
+	projectConfirmCmd.Flags().StringVar(&projectPlanID, "plan-id", "", "Specify plan ID")
+	projectConfirmCmd.Flags().BoolVar(&projectWriteTasks, "write-tasks", true, "Whether to write local tasks")
 
-	projectSyncCmd.Flags().StringVar(&projectProvider, "provider", "", "目标 Provider（支持简写）")
+	projectSyncCmd.Flags().StringVar(&projectProvider, "provider", "", "Target Provider (abbreviation supported)")
 	_ = projectSyncCmd.MarkFlagRequired("provider")
 }
 
@@ -148,13 +151,13 @@ func runProjectCreate(_ *cobra.Command, args []string) error {
 	ctx := context.Background()
 	projectStore, err := project.NewFileStore(cfg.Storage.Path)
 	if err != nil {
-		return commandError("初始化项目存储失败", err)
+		return commandError("Failed to initialize project storage", err)
 	}
 	source := strings.TrimSpace(projectSource)
 	if source != "" {
 		source = provider.ResolveProviderName(source)
 		if !provider.IsValidProvider(source) {
-			return usageError("无效 provider: " + projectSource)
+			return usageError("Invalid provider:" + projectSource)
 		}
 	}
 	item, err := (&projectservice.Service{ProjectStore: projectStore}).CreateProject(ctx, projectservice.CreateInput{
@@ -167,36 +170,32 @@ func runProjectCreate(_ *cobra.Command, args []string) error {
 		Source:      source,
 	})
 	if err != nil {
-		return commandError("保存项目失败", err)
+		return commandError("Failed to save project", err)
 	}
-	return printResult(item)
+	projection := buildProjectCreateProjection(item)
+	return printProjectionWithLegacyJSON(projectFormat, item, projection, func() { fmt.Print(renderProjectProjection("Project created", projection)) })
 }
 
 func runProjectList(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 	projectStore, err := project.NewFileStore(cfg.Storage.Path)
 	if err != nil {
-		return commandError("初始化项目存储失败", err)
+		return commandError("Failed to initialize project storage", err)
 	}
 	svc := &projectservice.Service{ProjectStore: projectStore}
 	items, err := svc.ListProjects(ctx, projectStatusFilter)
 	if err != nil {
-		return commandError("列出项目失败", err)
+		return commandError("List projects failed", err)
 	}
-	if projectFormat == "json" {
-		return printResult(items)
-	}
-	for _, line := range projectservice.ProjectListText(ctx, projectStore, items) {
-		fmt.Println(line)
-	}
-	return nil
+	projection := buildProjectListProjection(ctx, projectStore, items)
+	return printProjectionWithLegacyJSON(projectFormat, items, projection, func() { fmt.Print(renderProjectList(items, projection)) })
 }
 
 func runProjectSplit(_ *cobra.Command, args []string) error {
 	ctx := context.Background()
 	projectStore, err := project.NewFileStore(cfg.Storage.Path)
 	if err != nil {
-		return commandError("初始化项目存储失败", err)
+		return commandError("Failed to initialize project storage", err)
 	}
 	result, err := (&projectservice.Service{ProjectStore: projectStore}).SplitProject(ctx, projectservice.SplitInput{
 		ProjectID:          args[0],
@@ -212,20 +211,21 @@ func runProjectSplit(_ *cobra.Command, args []string) error {
 		MinPracticeTasks:   projectMinPracticeTasks,
 	})
 	if err != nil {
-		return commandError("生成项目计划失败", err)
+		return commandError("Failed to generate project plan", err)
 	}
-	return printResult(result)
+	projection := buildProjectMapProjection("project.split", "Project split recommendation generated.", result)
+	return printProjectionWithLegacyJSON(projectFormat, result, projection, func() { fmt.Print(renderProjectProjection("Project split", projection)) })
 }
 
 func runProjectSplitMarkdown(_ *cobra.Command, args []string) error {
 	ctx := context.Background()
 	projectStore, err := project.NewFileStore(cfg.Storage.Path)
 	if err != nil {
-		return commandError("初始化项目存储失败", err)
+		return commandError("Failed to initialize project storage", err)
 	}
 	markdown, err := projectservice.ReadMarkdownInput(projectMarkdownFile, projectMarkdownInline)
 	if err != nil {
-		return commandError("读取 Markdown 文件失败", err)
+		return commandError("Failed to read Markdown file", err)
 	}
 	result, err := (&projectservice.Service{ProjectStore: projectStore}).SplitProjectMarkdown(ctx, projectservice.SplitMarkdownInput{
 		ProjectID:   args[0],
@@ -234,19 +234,20 @@ func runProjectSplitMarkdown(_ *cobra.Command, args []string) error {
 		MaxTasks:    projectMaxTasks,
 	})
 	if err != nil {
-		if err.Error() == "请传入 --file 或 --markdown" {
+		if err.Error() == "Please pass in --file or --markdown" {
 			return usageError(err.Error())
 		}
-		return commandError("解析 Markdown 项目计划失败", err)
+		return commandError("Parsing Markdown project plan failed", err)
 	}
-	return printResult(result)
+	projection := buildProjectMapProjection("project.split_markdown", "Project split recommendation generated from Markdown.", result)
+	return printProjectionWithLegacyJSON(projectFormat, result, projection, func() { fmt.Print(renderProjectProjection("Project split", projection)) })
 }
 
 func runProjectConfirm(_ *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskStore, projectStore, cleanup, err := getCLIStores()
 	if err != nil {
-		return commandError("初始化存储失败", err)
+		return commandError("Failed to initialize storage", err)
 	}
 	defer cleanup()
 	result, err := (&projectservice.Service{TaskStore: taskStore, ProjectStore: projectStore}).ConfirmProject(ctx, projectservice.ConfirmInput{
@@ -255,25 +256,26 @@ func runProjectConfirm(_ *cobra.Command, args []string) error {
 		WriteTasks: projectWriteTasks,
 	})
 	if err != nil {
-		return commandError("确认项目失败", err)
+		return commandError("Confirm project failed", err)
 	}
-	return printResult(result)
+	projection := buildProjectMapProjection("project.confirm", "Project plan confirmed.", result)
+	return printProjectionWithLegacyJSON(projectFormat, result, projection, func() { fmt.Print(renderProjectProjection("Project confirmation", projection)) })
 }
 
 func runProjectSync(_ *cobra.Command, args []string) error {
 	ctx := context.Background()
 	taskStore, projectStore, cleanup, err := getCLIStores()
 	if err != nil {
-		return commandError("初始化存储失败", err)
+		return commandError("Failed to initialize storage", err)
 	}
 	defer cleanup()
 	projectID := strings.TrimSpace(args[0])
 	if _, err := projectStore.GetProject(ctx, projectID); err != nil {
-		return commandError("读取项目失败", err)
+		return commandError("Failed to read item", err)
 	}
 	providers, err := loadAuthenticatedProviders(projectProvider)
 	if err != nil {
-		return commandError("初始化 provider 失败", err)
+		return commandError("Failed to initialize provider", err)
 	}
 	providerName := provider.ResolveProviderName(projectProvider)
 	p := providers[providerName]
@@ -283,9 +285,179 @@ func runProjectSync(_ *cobra.Command, args []string) error {
 		ProjectStore: projectStore,
 	}).SyncProject(ctx, projectID, p, providerName)
 	if err != nil {
-		return commandError("同步项目失败", err)
+		return commandError("Sync project failed", err)
 	}
-	return printResult(result)
+	projection := buildProjectSyncProjection(result)
+	return printProjectionWithLegacyJSON(projectFormat, result, projection, func() { fmt.Print(renderProjectProjection("Project sync", projection)) })
+}
+
+func printProjectionWithLegacyJSON(format string, legacy interface{}, projection clioutput.Projection, renderText func()) error {
+	if globalProjectionModeRequested() {
+		return printProjection(format, projection, nil)
+	}
+	if renderText == nil {
+		renderText = func() { fmt.Print(clioutput.RenderSummary(projection)) }
+	}
+	return printStructured(format, legacy, renderText)
+}
+
+func buildProjectCreateProjection(item *project.Project) clioutput.Projection {
+	p := clioutput.New("project.create")
+	p.Summary = "Project draft created."
+	if item != nil {
+		p.Facts["project_id"] = item.ID
+		p.Facts["name"] = item.Name
+		p.Facts["status"] = item.Status
+		p.Facts["goal_type"] = item.GoalType
+		p.Facts["horizon_days"] = item.HorizonDays
+		if item.LatestPlanID != "" {
+			p.Facts["plan_id"] = item.LatestPlanID
+		}
+		p.Actions = append(p.Actions, clioutput.Action{Name: "split", Command: "taskbridge project split " + item.ID})
+	}
+	p.Data = item
+	return p
+}
+
+func buildProjectListProjection(ctx context.Context, store project.Store, items []project.Project) clioutput.Projection {
+	p := clioutput.New("project.list")
+	p.Summary = "Projects listed."
+	p.Facts["count"] = len(items)
+	if projectStatusFilter != "" {
+		p.Facts["status_filter"] = projectStatusFilter
+	}
+	for _, line := range projectservice.ProjectListText(ctx, store, items) {
+		p.Preview = append(p.Preview, clioutput.PreviewItem{Label: "project", Value: line})
+	}
+	p.Data = items
+	return p
+}
+
+func buildProjectMapProjection(command, summary string, result map[string]interface{}) clioutput.Projection {
+	p := clioutput.New(command)
+	p.Summary = summary
+	for _, key := range []string{"project_id", "plan_id", "status", "next_task_id", "mode", "provider", "message"} {
+		if value, ok := result[key]; ok {
+			p.Facts[key] = value
+		}
+	}
+	for _, key := range []string{"count", "pulled", "pushed", "skipped", "updated"} {
+		if value, ok := result[key]; ok {
+			p.Facts[key] = value
+		}
+	}
+	if warnings, ok := result["warnings"].([]string); ok {
+		p.Risks = append(p.Risks, warnings...)
+	}
+	p.Data = result
+	return p
+}
+
+func buildProjectSyncProjection(result *syncengine.ProjectSyncResult) clioutput.Projection {
+	p := clioutput.New("project.sync")
+	p.Summary = "Project sync completed."
+	if result != nil {
+		p.Status = cliStatusFromString(result.Status)
+		p.Facts["project_id"] = result.ProjectID
+		p.Facts["provider"] = result.Provider
+		p.Facts["status"] = result.Status
+		p.Facts["pushed"] = result.Pushed
+		p.Facts["updated"] = result.Updated
+		if result.Message != "" {
+			p.Facts["message"] = result.Message
+		}
+		if len(result.Errors) > 0 {
+			p.Status = clioutput.StatusPartial
+			p.Risks = append(p.Risks, result.Errors...)
+		}
+	}
+	p.Data = result
+	return p
+}
+
+func renderProjectList(items []project.Project, projection clioutput.Projection) string {
+	var b strings.Builder
+	b.WriteString("Projects\n\n")
+	b.WriteString(renderProjectionFacts(projection))
+	if len(items) == 0 {
+		b.WriteString("\nNo projects found.\n")
+		return renderRecommendedAction(b.String(), projection)
+	}
+
+	table := ui.NewTable("ID", "Name", "Status", "Goal", "Horizon", "Source")
+	for _, item := range items {
+		table.AddRow(item.ID, item.Name, string(item.Status), string(item.GoalType), fmt.Sprint(item.HorizonDays), item.Source)
+	}
+	b.WriteString("\nProject table\n")
+	b.WriteString(table.Render())
+	b.WriteString("\n")
+	return renderRecommendedAction(b.String(), projection)
+}
+
+func renderProjectProjection(title string, projection clioutput.Projection) string {
+	var b strings.Builder
+	if strings.TrimSpace(title) == "" {
+		title = projection.Summary
+	}
+	b.WriteString(title)
+	b.WriteString("\n\n")
+	b.WriteString(renderProjectionFacts(projection))
+	return renderRecommendedAction(b.String(), projection)
+}
+
+func renderProjectionFacts(projection clioutput.Projection) string {
+	var b strings.Builder
+	if projection.Summary != "" {
+		b.WriteString(projection.Summary)
+		b.WriteString("\n")
+	}
+	if len(projection.Facts) > 0 {
+		b.WriteString("\nSummary\n")
+		table := ui.NewTable("Fact", "Value")
+		for _, key := range sortedAnyKeys(projection.Facts) {
+			table.AddRow(key, fmt.Sprint(projection.Facts[key]))
+		}
+		b.WriteString(table.Render())
+		b.WriteString("\n")
+	}
+	if len(projection.Risks) > 0 {
+		b.WriteString("\nRisks\n")
+		for _, risk := range projection.Risks {
+			if strings.TrimSpace(risk) == "" {
+				continue
+			}
+			b.WriteString("- ")
+			b.WriteString(risk)
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+func renderRecommendedAction(prefix string, projection clioutput.Projection) string {
+	var b strings.Builder
+	b.WriteString(prefix)
+	for _, action := range projection.Actions {
+		if strings.TrimSpace(action.Command) == "" {
+			continue
+		}
+		b.WriteString("\nRecommended next step\n")
+		b.WriteString(action.Command)
+		b.WriteString("\n")
+		break
+	}
+	return b.String()
+}
+
+func cliStatusFromString(status string) clioutput.Status {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "error", "failed", "failure":
+		return clioutput.StatusFailed
+	case "partial", "warning", "degraded":
+		return clioutput.StatusPartial
+	default:
+		return clioutput.StatusSuccess
+	}
 }
 
 func getCLIStores() (storage.Storage, project.Store, func(), error) {
@@ -305,14 +477,14 @@ func printResult(value interface{}) error {
 	if IsQuietMode() {
 		bytes, err := json.Marshal(value)
 		if err != nil {
-			return commandError("序列化输出失败", err)
+			return commandError("Serialized output failed", err)
 		}
 		fmt.Println(string(bytes))
 		return nil
 	}
 	bytes, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
-		return commandError("序列化输出失败", err)
+		return commandError("Serialized output failed", err)
 	}
 	fmt.Println(string(bytes))
 	return nil

@@ -33,9 +33,9 @@ func (s *Service) Today(ctx context.Context, opts Options) (*TodayResult, error)
 	}
 
 	sections := []Section{
-		{ID: "must_do", Title: "今日必须做", Tasks: taskRefs(mustDo, "今天到期或已经逾期")},
-		{ID: "at_risk", Title: "即将失控", Tasks: taskRefs(atRisk, "未来 3 天内到期")},
-		{ID: "next", Title: "建议下一步", Tasks: taskRefs(next, "当前最值得推进")},
+		{ID: "must_do", Title: "Must do today", Tasks: taskRefs(mustDo, "Due today or already overdue")},
+		{ID: "at_risk", Title: "At risk", Tasks: taskRefs(atRisk, "Due within the next 3 days")},
+		{ID: "next", Title: "Suggested next steps", Tasks: taskRefs(next, "Best task to move forward now")},
 	}
 
 	actions := make([]SuggestedAction, 0)
@@ -47,7 +47,7 @@ func (s *Service) Today(ctx context.Context, opts Options) (*TodayResult, error)
 			ActionID:             fmt.Sprintf("act_overdue_%d", i+1),
 			Type:                 "defer_task",
 			TaskID:               task.ID,
-			Reason:               "任务已逾期且仍未完成，建议重新决策日期或拆分",
+			Reason:               "Task is overdue and still open; choose a new date or split it",
 			RequiresConfirmation: true,
 		})
 	}
@@ -78,7 +78,7 @@ func (s *Service) Next(ctx context.Context, opts Options) (*ListResult, error) {
 		return nil, err
 	}
 	next := pickNext(tasks, now, defaultLimit(opts.Limit, 5))
-	return &ListResult{Schema: SchemaNext, Status: "ok", Count: len(next), Tasks: taskRefs(next, "当前最值得推进")}, nil
+	return &ListResult{Schema: SchemaNext, Status: "ok", Count: len(next), Tasks: taskRefs(next, "Best task to move forward now")}, nil
 }
 
 func (s *Service) Inbox(ctx context.Context, opts Options) (*ListResult, error) {
@@ -91,7 +91,7 @@ func (s *Service) Inbox(ctx context.Context, opts Options) (*ListResult, error) 
 	if len(inbox) > limit {
 		inbox = inbox[:limit]
 	}
-	return &ListResult{Schema: SchemaInbox, Status: "ok", Count: len(inbox), Tasks: taskRefs(inbox, "缺少日期或项目归属")}, nil
+	return &ListResult{Schema: SchemaInbox, Status: "ok", Count: len(inbox), Tasks: taskRefs(inbox, "Missing due date or project assignment")}, nil
 }
 
 func (s *Service) Review(ctx context.Context, opts Options) (*ReviewResult, error) {
@@ -108,7 +108,7 @@ func (s *Service) Review(ctx context.Context, opts Options) (*ReviewResult, erro
 			ActionID:             fmt.Sprintf("act_review_overdue_%d", i+1),
 			Type:                 "defer_task",
 			TaskID:               task.ID,
-			Reason:               "任务已逾期，建议确认是否延期、拆分或取消",
+			Reason:               "Task is overdue; decide whether to defer, split, or cancel it",
 			RequiresConfirmation: true,
 		})
 	}
@@ -117,7 +117,7 @@ func (s *Service) Review(ctx context.Context, opts Options) (*ReviewResult, erro
 			ActionID:             fmt.Sprintf("act_review_split_%d", i+1),
 			Type:                 "split_task",
 			TaskID:               task.ID,
-			Reason:               "任务预估超过 180 分钟，建议拆成可执行步骤",
+			Reason:               "Task estimate exceeds 180 minutes; split it into executable steps",
 			RequiresConfirmation: true,
 		})
 	}
@@ -139,7 +139,7 @@ func (s *Service) queryActiveTasks(ctx context.Context, source string) ([]model.
 	if strings.TrimSpace(source) != "" {
 		resolved := provider.ResolveProviderName(source)
 		if !provider.IsValidProvider(resolved) && resolved != string(model.SourceLocal) {
-			return nil, fmt.Errorf("无效 provider: %s", source)
+			return nil, fmt.Errorf("invalid provider: %s", source)
 		}
 		query.Sources = []model.TaskSource{model.TaskSource(resolved)}
 	}
@@ -318,15 +318,15 @@ func MockTasks(now time.Time) []model.Task {
 		now = time.Now()
 	}
 	return []model.Task{
-		{ID: "mock_today", Title: "完成 TaskBridge 今日工作台设计", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityHigh, DueDate: ptrTime(dayStart(now).Add(17 * time.Hour)), CreatedAt: now.Add(-48 * time.Hour), UpdatedAt: now.Add(-2 * time.Hour), EstimatedMinutes: 90},
-		{ID: "mock_overdue", Title: "整理逾期任务并决定去留", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityMedium, DueDate: ptrTime(dayStart(now).AddDate(0, 0, -2)), CreatedAt: now.AddDate(0, 0, -7), UpdatedAt: now.AddDate(0, 0, -2), EstimatedMinutes: 45},
-		{ID: "mock_large", Title: "把 Agent 安全执行层拆成可交付任务", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityHigh, CreatedAt: now.AddDate(0, 0, -1), UpdatedAt: now.Add(-3 * time.Hour), EstimatedMinutes: 240},
-		{ID: "mock_inbox", Title: "确认 Todoist 同步策略", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityLow, CreatedAt: now.AddDate(0, 0, -1), UpdatedAt: now.AddDate(0, 0, -1)},
-		{ID: "mock_q2_plan", Title: "制定 Q3 产品路线图", Status: model.StatusTodo, Source: "todoist", Priority: model.PriorityMedium, DueDate: ptrTime(dayStart(now).AddDate(0, 0, 14)), CreatedAt: now.AddDate(0, 0, -3), UpdatedAt: now.Add(-24 * time.Hour), EstimatedMinutes: 120},
-		{ID: "mock_q2_health", Title: "每周复盘：评估团队工作负载", Status: model.StatusInProgress, Source: model.SourceLocal, Priority: model.PriorityMedium, DueDate: ptrTime(dayStart(now).AddDate(0, 0, 2)), CreatedAt: now.AddDate(0, 0, -5), UpdatedAt: now.Add(-4 * time.Hour), EstimatedMinutes: 60},
-		{ID: "mock_q3_reply", Title: "回复客户技术咨询邮件", Status: model.StatusTodo, Source: "google", Priority: model.PriorityLow, DueDate: ptrTime(dayStart(now).Add(12 * time.Hour)), CreatedAt: now.Add(-6 * time.Hour), UpdatedAt: now.Add(-1 * time.Hour), EstimatedMinutes: 30},
-		{ID: "mock_q3_meeting", Title: "准备周会汇报材料", Status: model.StatusTodo, Source: "microsoft", Priority: model.PriorityMedium, DueDate: ptrTime(dayStart(now).AddDate(0, 0, 1).Add(10 * time.Hour)), CreatedAt: now.AddDate(0, 0, -2), UpdatedAt: now.Add(-12 * time.Hour), EstimatedMinutes: 45},
-		{ID: "mock_q4_cleanup", Title: "清理过期的测试数据", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityLow, CreatedAt: now.AddDate(0, 0, -10), UpdatedAt: now.AddDate(0, 0, -10), EstimatedMinutes: 20},
-		{ID: "mock_completed", Title: "完成用户认证模块重构", Status: model.StatusCompleted, Source: model.SourceLocal, Priority: model.PriorityHigh, DueDate: ptrTime(dayStart(now).AddDate(0, 0, -1).Add(18 * time.Hour)), CreatedAt: now.AddDate(0, 0, -14), UpdatedAt: now.AddDate(0, 0, -1), EstimatedMinutes: 180},
+		{ID: "mock_today", Title: "Finish TaskBridge daily workbench design", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityHigh, DueDate: ptrTime(dayStart(now).Add(17 * time.Hour)), CreatedAt: now.Add(-48 * time.Hour), UpdatedAt: now.Add(-2 * time.Hour), EstimatedMinutes: 90},
+		{ID: "mock_overdue", Title: "Review overdue tasks and decide outcomes", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityMedium, DueDate: ptrTime(dayStart(now).AddDate(0, 0, -2)), CreatedAt: now.AddDate(0, 0, -7), UpdatedAt: now.AddDate(0, 0, -2), EstimatedMinutes: 45},
+		{ID: "mock_large", Title: "Split Agent safe execution layer into deliverable tasks", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityHigh, CreatedAt: now.AddDate(0, 0, -1), UpdatedAt: now.Add(-3 * time.Hour), EstimatedMinutes: 240},
+		{ID: "mock_inbox", Title: "Confirm Todoist sync strategy", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityLow, CreatedAt: now.AddDate(0, 0, -1), UpdatedAt: now.AddDate(0, 0, -1)},
+		{ID: "mock_q2_plan", Title: "Define Q3 product roadmap", Status: model.StatusTodo, Source: "todoist", Priority: model.PriorityMedium, DueDate: ptrTime(dayStart(now).AddDate(0, 0, 14)), CreatedAt: now.AddDate(0, 0, -3), UpdatedAt: now.Add(-24 * time.Hour), EstimatedMinutes: 120},
+		{ID: "mock_q2_health", Title: "Weekly review: assess team workload", Status: model.StatusInProgress, Source: model.SourceLocal, Priority: model.PriorityMedium, DueDate: ptrTime(dayStart(now).AddDate(0, 0, 2)), CreatedAt: now.AddDate(0, 0, -5), UpdatedAt: now.Add(-4 * time.Hour), EstimatedMinutes: 60},
+		{ID: "mock_q3_reply", Title: "Reply to customer technical questions", Status: model.StatusTodo, Source: "google", Priority: model.PriorityLow, DueDate: ptrTime(dayStart(now).Add(12 * time.Hour)), CreatedAt: now.Add(-6 * time.Hour), UpdatedAt: now.Add(-1 * time.Hour), EstimatedMinutes: 30},
+		{ID: "mock_q3_meeting", Title: "Prepare weekly meeting update", Status: model.StatusTodo, Source: "microsoft", Priority: model.PriorityMedium, DueDate: ptrTime(dayStart(now).AddDate(0, 0, 1).Add(10 * time.Hour)), CreatedAt: now.AddDate(0, 0, -2), UpdatedAt: now.Add(-12 * time.Hour), EstimatedMinutes: 45},
+		{ID: "mock_q4_cleanup", Title: "Clean up expired test data", Status: model.StatusTodo, Source: model.SourceLocal, Priority: model.PriorityLow, CreatedAt: now.AddDate(0, 0, -10), UpdatedAt: now.AddDate(0, 0, -10), EstimatedMinutes: 20},
+		{ID: "mock_completed", Title: "Complete auth module refactor", Status: model.StatusCompleted, Source: model.SourceLocal, Priority: model.PriorityHigh, DueDate: ptrTime(dayStart(now).AddDate(0, 0, -1).Add(18 * time.Hour)), CreatedAt: now.AddDate(0, 0, -14), UpdatedAt: now.AddDate(0, 0, -1), EstimatedMinutes: 180},
 	}
 }

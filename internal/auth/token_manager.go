@@ -256,6 +256,7 @@ func (tm *TokenManager) RefreshAll(ctx context.Context) map[string]error {
 	tm.mu.RUnlock()
 
 	results := make(map[string]error)
+	var resultsMu sync.Mutex
 	var wg sync.WaitGroup
 
 	for _, provider := range providers {
@@ -263,7 +264,9 @@ func (tm *TokenManager) RefreshAll(ctx context.Context) map[string]error {
 		go func(p TokenProvider) {
 			defer wg.Done()
 			err := tm.refreshWithRetry(ctx, p)
+			resultsMu.Lock()
 			results[p.Name()] = err
+			resultsMu.Unlock()
 		}(provider)
 	}
 

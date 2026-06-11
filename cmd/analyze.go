@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/yeisme/taskbridge/internal/clioutput"
 
 	"github.com/yeisme/taskbridge/internal/model"
 	"github.com/yeisme/taskbridge/internal/storage"
@@ -18,67 +19,67 @@ var (
 	analyzeFormat string
 )
 
-// analyzeCmd 分析命令
+// analyzeCmd analysis command
 var analyzeCmd = &cobra.Command{
 	Use:   "analyze",
-	Short: "任务分析",
-	Long: `分析任务数据，提供四象限视图、优先级分析、时间分布等报告。
+	Short: "Task analysis",
+	Long: `Analyze task data with quadrant, priority, time, trend, and comprehensive reports.
 
-子命令:
-  quadrant   四象限分析（艾森豪威尔矩阵）
-  priority   优先级分析
-  time       时间分布分析
-  trend      趋势分析
-  report     生成综合报告
+Subcommands:
+  quadrant   Four-quadrant analysis (Eisenhower matrix)
+  priority   Priority distribution analysis
+  time       Time distribution analysis
+  trend      Completion trend analysis
+  report     Comprehensive analysis report
 
-示例:
+Examples:
   taskbridge analyze quadrant
   taskbridge analyze priority --format json
   taskbridge analyze report`,
 }
 
-// analyzeQuadrantCmd 四象限分析
+// analyzeQuadrantCmd four quadrant analysis
 var analyzeQuadrantCmd = &cobra.Command{
 	Use:   "quadrant",
-	Short: "四象限分析（艾森豪威尔矩阵）",
-	Long: `按照艾森豪威尔矩阵分析任务分布：
+	Short: "Four-quadrant analysis (Eisenhower matrix)",
+	Long: `Analyze active task distribution with the Eisenhower matrix:
 
-  Q1 紧急且重要   - 立即处理
-  Q2 重要不紧急   - 计划安排
-  Q3 紧急不重要   - 委托他人
-  Q4 不紧急不重要 - 考虑删除`,
+  Q1 Urgent and important       - Do immediately
+  Q2 Important not urgent       - Schedule and protect time
+  Q3 Urgent not important       - Delegate or reduce
+  Q4 Not urgent and not important - Delete or defer`,
 	RunE: runAnalyzeQuadrant,
 }
 
-// analyzePriorityCmd 优先级分析
+// analyzePriorityCmd Prioritization analysis
 var analyzePriorityCmd = &cobra.Command{
 	Use:   "priority",
-	Short: "优先级分析",
-	Long:  `按优先级分布分析任务`,
+	Short: "Priority distribution analysis",
+	Long:  `Analyze active tasks by priority and average priority score`,
 	RunE:  runAnalyzePriority,
 }
 
-// analyzeTimeCmd 时间分析
+// analyzeTimeCmd time analysis
 var analyzeTimeCmd = &cobra.Command{
 	Use:   "time",
-	Short: "时间分布分析",
-	Long:  `按截止日期和创建时间分析任务分布`,
+	Short: "Time distribution analysis",
+	Long:  `Analyze task distribution by deadline and creation time`,
 	RunE:  runAnalyzeTime,
 }
 
-// analyzeTrendCmd 趋势分析
+// analyzeTrendCmd trend analysis
 var analyzeTrendCmd = &cobra.Command{
 	Use:   "trend",
-	Short: "趋势分析",
-	Long:  `分析任务完成趋势`,
+	Short: "Completion trend analysis",
+	Long:  `Analyze task completion trends`,
 	RunE:  runAnalyzeTrend,
 }
 
-// analyzeReportCmd 综合报告
+// analyzeReportCmd comprehensive report
 var analyzeReportCmd = &cobra.Command{
 	Use:   "report",
-	Short: "生成综合报告",
-	Long:  `生成包含所有分析的综合报告`,
+	Short: "Comprehensive analysis report",
+	Long:  `Generate a comprehensive analysis report across task status, quadrant, priority, and time`,
 	RunE:  runAnalyzeReport,
 }
 
@@ -90,45 +91,103 @@ func init() {
 	analyzeCmd.AddCommand(analyzeTrendCmd)
 	analyzeCmd.AddCommand(analyzeReportCmd)
 
-	// 通用选项
+	//General options
 	for _, cmd := range []*cobra.Command{analyzeQuadrantCmd, analyzePriorityCmd, analyzeTimeCmd, analyzeTrendCmd, analyzeReportCmd} {
-		cmd.Flags().StringVarP(&analyzeFormat, "format", "f", "text", "输出格式 (text, json)")
+		cmd.Flags().StringVarP(&analyzeFormat, "format", "f", "text", "Output format (text, json)")
 	}
 }
 
-// getTasksForAnalysis 获取用于分析的任务
+// getTasksForAnalysis Gets the tasks used for analysis
 func getTasksForAnalysis() ([]model.Task, error) {
 	ctx := context.Background()
 	store, cleanup, err := getStore()
 	if err != nil {
-		return nil, fmt.Errorf("创建存储失败: %w", err)
+		return nil, fmt.Errorf("failed to create storage: %w", err)
 	}
 	defer cleanup()
 
-	// 获取所有任务
+	//Get all tasks
 	tasks, err := store.ListTasks(ctx, storage.ListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("获取任务失败: %w", err)
+		return nil, fmt.Errorf("failed to get task: %w", err)
 	}
 
 	return tasks, nil
 }
 
-// QuadrantAnalysis 四象限分析结果
-type QuadrantAnalysis struct {
-	Q1 QuadrantData `json:"q1"`
-	Q2 QuadrantData `json:"q2"`
-	Q3 QuadrantData `json:"q3"`
-	Q4 QuadrantData `json:"q4"`
+func printAnalyzeJSON(v interface{}) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return commandError("Serialized output failed", err)
+	}
+	fmt.Println(string(data))
+	return nil
 }
 
-// QuadrantData 象限数据
+// QuadrantAnalysis four-quadrant analysis results
+type QuadrantAnalysis struct {
+	Q1      QuadrantData `json:"q1"`
+	Q2      QuadrantData `json:"q2"`
+	Q3      QuadrantData `json:"q3"`
+	Q4      QuadrantData `json:"q4"`
+	Summary SummaryData  `json:"summary,omitempty"`
+}
+
+// QuadrantData quadrant data
 type QuadrantData struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Count       int      `json:"count"`
 	Percentage  float64  `json:"percentage"`
 	Tasks       []string `json:"tasks,omitempty"`
+}
+
+func buildAnalyzeProjection(command, summary string, data any) clioutput.Projection {
+	p := clioutput.New(command)
+	p.Summary = summary
+	p.Data = data
+	switch v := data.(type) {
+	case PriorityAnalysis:
+		p.Facts["total"] = v.Summary.Total
+		p.Facts["active"] = v.Summary.Active
+		p.Facts["completed"] = v.Summary.Completed
+		p.Facts["avg_priority_score"] = v.Summary.AvgPriorityScore
+	case QuadrantAnalysis:
+		p.Facts["total"] = v.Summary.Total
+		p.Facts["active"] = v.Summary.Active
+		p.Facts["completed"] = v.Summary.Completed
+	case AnalyzeReport:
+		p.Facts["total"] = v.Total
+		p.Facts["active"] = v.Active
+		p.Facts["completed"] = v.Completed
+	}
+	return p
+}
+
+func renderQuadrantAnalysis(analysis QuadrantAnalysis) string {
+	active := analysis.Q1.Count + analysis.Q2.Count + analysis.Q3.Count + analysis.Q4.Count
+	return clioutput.RenderStatPanel(clioutput.StatPanel{
+		Title: "📊 Four-quadrant analysis (Eisenhower matrix)",
+		Rows: []clioutput.StatRow{
+			{Icon: "🔥", Label: "Q1 Urgent and important", Value: fmt.Sprintf("%d", analysis.Q1.Count), Percent: fmt.Sprintf("%.1f%%", analysis.Q1.Percentage), Hint: analysis.Q1.Description},
+			{Icon: "📋", Label: "Q2 Important not urgent", Value: fmt.Sprintf("%d", analysis.Q2.Count), Percent: fmt.Sprintf("%.1f%%", analysis.Q2.Percentage), Hint: analysis.Q2.Description},
+			{Icon: "⚡", Label: "Q3 Urgent not important", Value: fmt.Sprintf("%d", analysis.Q3.Count), Percent: fmt.Sprintf("%.1f%%", analysis.Q3.Percentage), Hint: analysis.Q3.Description},
+			{Icon: "🗑️", Label: "Q4 Not urgent or important", Value: fmt.Sprintf("%d", analysis.Q4.Count), Percent: fmt.Sprintf("%.1f%%", analysis.Q4.Percentage), Hint: analysis.Q4.Description},
+		},
+		Footer: renderAnalyzeSummaryFooter(analysis.Summary, active),
+	})
+}
+
+func renderAnalyzeSummaryFooter(summary SummaryData, fallbackActive int) string {
+	if summary.Total == 0 && summary.Active == 0 && summary.Completed == 0 && fallbackActive > 0 {
+		summary.Active = fallbackActive
+		summary.Total = fallbackActive
+	}
+	footer := fmt.Sprintf("Total: %d tasks | Active: %d | Completed: %d", summary.Total, summary.Active, summary.Completed)
+	if summary.AvgPriorityScore > 0 {
+		footer += fmt.Sprintf(" | Average priority score: %.1f", summary.AvgPriorityScore)
+	}
+	return footer
 }
 
 func runAnalyzeQuadrant(_ *cobra.Command, _ []string) error {
@@ -139,23 +198,23 @@ func runAnalyzeQuadrant(_ *cobra.Command, _ []string) error {
 
 	analysis := QuadrantAnalysis{
 		Q1: QuadrantData{
-			Name:        "Q1 紧急且重要",
-			Description: "立即处理",
+			Name:        "Q1 Urgent and important",
+			Description: "Do immediately",
 			Tasks:       []string{},
 		},
 		Q2: QuadrantData{
-			Name:        "Q2 重要不紧急",
-			Description: "计划安排",
+			Name:        "Q2 Important not urgent",
+			Description: "Schedule and protect time",
 			Tasks:       []string{},
 		},
 		Q3: QuadrantData{
-			Name:        "Q3 紧急不重要",
-			Description: "委托他人",
+			Name:        "Q3 Urgent not important",
+			Description: "Delegate or reduce",
 			Tasks:       []string{},
 		},
 		Q4: QuadrantData{
-			Name:        "Q4 不紧急不重要",
-			Description: "考虑删除",
+			Name:        "Q4 Not urgent or important",
+			Description: "Delete or defer",
 			Tasks:       []string{},
 		},
 	}
@@ -181,7 +240,7 @@ func runAnalyzeQuadrant(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	// 计算百分比
+	//Calculate percentage
 	activeTotal := analysis.Q1.Count + analysis.Q2.Count + analysis.Q3.Count + analysis.Q4.Count
 	if activeTotal > 0 {
 		analysis.Q1.Percentage = float64(analysis.Q1.Count) / float64(activeTotal) * 100
@@ -190,35 +249,15 @@ func runAnalyzeQuadrant(_ *cobra.Command, _ []string) error {
 		analysis.Q4.Percentage = float64(analysis.Q4.Count) / float64(activeTotal) * 100
 	}
 
-	if analyzeFormat == "json" {
-		data, _ := json.MarshalIndent(analysis, "", "  ")
-		fmt.Println(string(data))
-		return nil
-	}
+	analysis.Summary = SummaryData{Total: total, Active: activeTotal, Completed: total - activeTotal}
 
-	// 文本格式
-	fmt.Println()
-	fmt.Println("📊 四象限分析（艾森豪威尔矩阵）")
-	fmt.Println()
-	fmt.Println("┌─────────────────────────────────────────────────────────────────┐")
-	fmt.Printf("│ %-15s │ %-4d (%5.1f%%) │ 建议: 立即处理      │\n",
-		"🔥 Q1 紧急且重要", analysis.Q1.Count, analysis.Q1.Percentage)
-	fmt.Println("├─────────────────────────────────────────────────────────────────┤")
-	fmt.Printf("│ %-15s │ %-4d (%5.1f%%) │ 建议: 计划安排      │\n",
-		"📋 Q2 重要不紧急", analysis.Q2.Count, analysis.Q2.Percentage)
-	fmt.Println("├─────────────────────────────────────────────────────────────────┤")
-	fmt.Printf("│ %-15s │ %-4d (%5.1f%%) │ 建议: 委托他人      │\n",
-		"⚡ Q3 紧急不重要", analysis.Q3.Count, analysis.Q3.Percentage)
-	fmt.Println("├─────────────────────────────────────────────────────────────────┤")
-	fmt.Printf("│ %-15s │ %-4d (%5.1f%%) │ 建议: 考虑删除      │\n",
-		"🗑️ Q4 不紧急不重要", analysis.Q4.Count, analysis.Q4.Percentage)
-	fmt.Println("└─────────────────────────────────────────────────────────────────┘")
-	fmt.Println()
-	fmt.Printf("总计: %d 个任务 (已完成: %d)\n", total, total-activeTotal)
-	return nil
+	projection := buildAnalyzeProjection("analyze.quadrant", "Quadrant analysis completed.", analysis)
+	return printProjectionWithLegacyJSON(analyzeFormat, analysis, projection, func() {
+		fmt.Print(renderQuadrantAnalysis(analysis))
+	})
 }
 
-// PriorityAnalysis 优先级分析结果
+// PriorityAnalysis Prioritization analysis results
 type PriorityAnalysis struct {
 	Urgent  PriorityData `json:"urgent"`
 	High    PriorityData `json:"high"`
@@ -228,19 +267,33 @@ type PriorityAnalysis struct {
 	Summary SummaryData  `json:"summary"`
 }
 
-// PriorityData 优先级数据
+// PriorityData priority data
 type PriorityData struct {
 	Count      int      `json:"count"`
 	Percentage float64  `json:"percentage"`
 	Tasks      []string `json:"tasks,omitempty"`
 }
 
-// SummaryData 汇总数据
+// SummaryData summary data
 type SummaryData struct {
 	Total            int     `json:"total"`
 	Active           int     `json:"active"`
 	Completed        int     `json:"completed"`
 	AvgPriorityScore float64 `json:"avg_priority_score"`
+}
+
+func renderPriorityAnalysis(analysis PriorityAnalysis) string {
+	return clioutput.RenderStatPanel(clioutput.StatPanel{
+		Title: "📊 Prioritization analysis",
+		Rows: []clioutput.StatRow{
+			{Icon: "🔴", Label: "Urgent (P0)", Value: fmt.Sprintf("%d", analysis.Urgent.Count), Percent: fmt.Sprintf("%.1f%%", analysis.Urgent.Percentage)},
+			{Icon: "🟠", Label: "High (P1)", Value: fmt.Sprintf("%d", analysis.High.Count), Percent: fmt.Sprintf("%.1f%%", analysis.High.Percentage)},
+			{Icon: "🟡", Label: "Medium (P2)", Value: fmt.Sprintf("%d", analysis.Medium.Count), Percent: fmt.Sprintf("%.1f%%", analysis.Medium.Percentage)},
+			{Icon: "🔵", Label: "Low (P3)", Value: fmt.Sprintf("%d", analysis.Low.Count), Percent: fmt.Sprintf("%.1f%%", analysis.Low.Percentage)},
+			{Icon: "⚪", Label: "No priority", Value: fmt.Sprintf("%d", analysis.None.Count), Percent: fmt.Sprintf("%.1f%%", analysis.None.Percentage)},
+		},
+		Footer: renderAnalyzeSummaryFooter(analysis.Summary, analysis.Summary.Active),
+	})
 }
 
 func runAnalyzePriority(_ *cobra.Command, _ []string) error {
@@ -296,7 +349,7 @@ func runAnalyzePriority(_ *cobra.Command, _ []string) error {
 		analysis.Summary.AvgPriorityScore = float64(totalScore) / float64(scoreCount)
 	}
 
-	// 计算百分比
+	//Calculate percentage
 	if analysis.Summary.Active > 0 {
 		analysis.Urgent.Percentage = float64(analysis.Urgent.Count) / float64(analysis.Summary.Active) * 100
 		analysis.High.Percentage = float64(analysis.High.Count) / float64(analysis.Summary.Active) * 100
@@ -305,38 +358,13 @@ func runAnalyzePriority(_ *cobra.Command, _ []string) error {
 		analysis.None.Percentage = float64(analysis.None.Count) / float64(analysis.Summary.Active) * 100
 	}
 
-	if analyzeFormat == "json" {
-		data, _ := json.MarshalIndent(analysis, "", "  ")
-		fmt.Println(string(data))
-		return nil
-	}
-
-	// 文本格式
-	fmt.Println()
-	fmt.Println("📊 优先级分析")
-	fmt.Println()
-	fmt.Println("┌────────────────────────────────────────────────────────┐")
-	fmt.Printf("│ 🔴 紧急 (P0)    │ %-4d (%5.1f%%)                 │\n",
-		analysis.Urgent.Count, analysis.Urgent.Percentage)
-	fmt.Printf("│ 🟠 高   (P1)    │ %-4d (%5.1f%%)                 │\n",
-		analysis.High.Count, analysis.High.Percentage)
-	fmt.Printf("│ 🟡 中   (P2)    │ %-4d (%5.1f%%)                 │\n",
-		analysis.Medium.Count, analysis.Medium.Percentage)
-	fmt.Printf("│ 🔵 低   (P3)    │ %-4d (%5.1f%%)                 │\n",
-		analysis.Low.Count, analysis.Low.Percentage)
-	fmt.Printf("│ ⚪ 无优先级      │ %-4d (%5.1f%%)                 │\n",
-		analysis.None.Count, analysis.None.Percentage)
-	fmt.Println("└────────────────────────────────────────────────────────┘")
-	fmt.Println()
-	fmt.Printf("总计: %d 个任务 | 活跃: %d | 已完成: %d\n",
-		analysis.Summary.Total, analysis.Summary.Active, analysis.Summary.Completed)
-	if analysis.Summary.AvgPriorityScore > 0 {
-		fmt.Printf("平均优先级分数: %.1f\n", analysis.Summary.AvgPriorityScore)
-	}
-	return nil
+	projection := buildAnalyzeProjection("analyze.priority", "Priority analysis completed.", analysis)
+	return printProjectionWithLegacyJSON(analyzeFormat, analysis, projection, func() {
+		fmt.Print(renderPriorityAnalysis(analysis))
+	})
 }
 
-// TimeAnalysis 时间分析结果
+// TimeAnalysis time analysis results
 type TimeAnalysis struct {
 	Overdue   TimeData `json:"overdue"`
 	Today     TimeData `json:"today"`
@@ -348,11 +376,27 @@ type TimeAnalysis struct {
 	NoDueDate TimeData `json:"no_due_date"`
 }
 
-// TimeData 时间数据
+// TimeData time data
 type TimeData struct {
 	Description string   `json:"description"`
 	Count       int      `json:"count"`
 	Tasks       []string `json:"tasks,omitempty"`
+}
+
+func renderTimeAnalysis(analysis TimeAnalysis) string {
+	return clioutput.RenderStatPanel(clioutput.StatPanel{
+		Title: "📊 Time distribution analysis",
+		Rows: []clioutput.StatRow{
+			{Icon: "⚠️", Label: "Overdue", Value: fmt.Sprintf("%d", analysis.Overdue.Count)},
+			{Icon: "🔥", Label: "Today", Value: fmt.Sprintf("%d", analysis.Today.Count)},
+			{Icon: "📅", Label: "Tomorrow", Value: fmt.Sprintf("%d", analysis.Tomorrow.Count)},
+			{Icon: "📆", Label: "This week", Value: fmt.Sprintf("%d", analysis.ThisWeek.Count)},
+			{Icon: "📋", Label: "Next week", Value: fmt.Sprintf("%d", analysis.NextWeek.Count)},
+			{Icon: "🗓️", Label: "This month", Value: fmt.Sprintf("%d", analysis.ThisMonth.Count)},
+			{Icon: "📁", Label: "Future", Value: fmt.Sprintf("%d", analysis.Future.Count)},
+			{Icon: "❓", Label: "No due date", Value: fmt.Sprintf("%d", analysis.NoDueDate.Count)},
+		},
+	})
 }
 
 func runAnalyzeTime(_ *cobra.Command, _ []string) error {
@@ -369,14 +413,14 @@ func runAnalyzeTime(_ *cobra.Command, _ []string) error {
 	thisMonthEnd := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, now.Location()).Add(-time.Second)
 
 	analysis := TimeAnalysis{
-		Overdue:   TimeData{Description: "已过期", Tasks: []string{}},
-		Today:     TimeData{Description: "今天", Tasks: []string{}},
-		Tomorrow:  TimeData{Description: "明天", Tasks: []string{}},
-		ThisWeek:  TimeData{Description: "本周", Tasks: []string{}},
-		NextWeek:  TimeData{Description: "下周", Tasks: []string{}},
-		ThisMonth: TimeData{Description: "本月", Tasks: []string{}},
-		Future:    TimeData{Description: "更远", Tasks: []string{}},
-		NoDueDate: TimeData{Description: "无截止日期", Tasks: []string{}},
+		Overdue:   TimeData{Description: "overdue", Tasks: []string{}},
+		Today:     TimeData{Description: "today", Tasks: []string{}},
+		Tomorrow:  TimeData{Description: "tomorrow", Tasks: []string{}},
+		ThisWeek:  TimeData{Description: "this week", Tasks: []string{}},
+		NextWeek:  TimeData{Description: "next week", Tasks: []string{}},
+		ThisMonth: TimeData{Description: "this month", Tasks: []string{}},
+		Future:    TimeData{Description: "future", Tasks: []string{}},
+		NoDueDate: TimeData{Description: "no due date", Tasks: []string{}},
 	}
 
 	for _, t := range tasks {
@@ -417,40 +461,39 @@ func runAnalyzeTime(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	if analyzeFormat == "json" {
-		data, _ := json.MarshalIndent(analysis, "", "  ")
-		fmt.Println(string(data))
-		return nil
-	}
-
-	// 文本格式
-	fmt.Println()
-	fmt.Println("📊 时间分布分析")
-	fmt.Println()
-	fmt.Println("┌────────────────────────────────────────────────────────┐")
-	fmt.Printf("│ ⚠️  已过期       │ %-4d 个任务                      │\n", analysis.Overdue.Count)
-	fmt.Printf("│ 🔥 今天         │ %-4d 个任务                      │\n", analysis.Today.Count)
-	fmt.Printf("│ 📅 明天         │ %-4d 个任务                      │\n", analysis.Tomorrow.Count)
-	fmt.Printf("│ 📆 本周         │ %-4d 个任务                      │\n", analysis.ThisWeek.Count)
-	fmt.Printf("│ 📋 下周         │ %-4d 个任务                      │\n", analysis.NextWeek.Count)
-	fmt.Printf("│ 🗓️  本月         │ %-4d 个任务                      │\n", analysis.ThisMonth.Count)
-	fmt.Printf("│ 📁 更远         │ %-4d 个任务                      │\n", analysis.Future.Count)
-	fmt.Printf("│ ❓ 无截止日期    │ %-4d 个任务                      │\n", analysis.NoDueDate.Count)
-	fmt.Println("└────────────────────────────────────────────────────────┘")
-	return nil
+	projection := buildAnalyzeProjection("analyze.time", "Time analysis completed.", analysis)
+	return printProjectionWithLegacyJSON(analyzeFormat, analysis, projection, func() {
+		fmt.Print(renderTimeAnalysis(analysis))
+	})
 }
 
-// TrendAnalysis 趋势分析结果
+// TrendAnalysis trend analysis results
 type TrendAnalysis struct {
 	DailyCompletions []DayData `json:"daily_completions"`
 	WeeklyAverage    float64   `json:"weekly_average"`
 	TotalCompleted   int       `json:"total_completed"`
 }
 
-// DayData 每日数据
+// DayData daily data
 type DayData struct {
 	Date      string `json:"date"`
 	Completed int    `json:"completed"`
+}
+
+func renderTrendAnalysis(analysis TrendAnalysis) string {
+	rows := make([]clioutput.StatRow, 0, len(analysis.DailyCompletions))
+	for _, day := range analysis.DailyCompletions {
+		bar := strings.Repeat("█", day.Completed)
+		if day.Completed == 0 {
+			bar = "░"
+		}
+		rows = append(rows, clioutput.StatRow{Label: day.Date, Value: fmt.Sprintf("%d", day.Completed), Hint: bar})
+	}
+	return clioutput.RenderStatPanel(clioutput.StatPanel{
+		Title:  "📊 Trend analysis (last 7 days)",
+		Rows:   rows,
+		Footer: fmt.Sprintf("This week completed: %d tasks | Daily average: %.1f", analysis.TotalCompleted, analysis.WeeklyAverage),
+	})
 }
 
 func runAnalyzeTrend(cmd *cobra.Command, args []string) error {
@@ -459,7 +502,7 @@ func runAnalyzeTrend(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// 统计过去7天的完成情况
+	//Statistics of completion status in the past 7 days
 	now := time.Now()
 	dailyCompletions := make(map[string]int)
 
@@ -480,7 +523,7 @@ func runAnalyzeTrend(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 转换为有序列表
+	//Convert to ordered list
 	var trendData []DayData
 	var dates []string
 	for d := range dailyCompletions {
@@ -503,28 +546,41 @@ func runAnalyzeTrend(cmd *cobra.Command, args []string) error {
 		TotalCompleted:   totalCompleted,
 	}
 
-	if analyzeFormat == "json" {
-		data, _ := json.MarshalIndent(analysis, "", "  ")
-		fmt.Println(string(data))
-		return nil
-	}
+	projection := buildAnalyzeProjection("analyze.trend", "Trend analysis completed.", analysis)
+	return printProjectionWithLegacyJSON(analyzeFormat, analysis, projection, func() {
+		fmt.Print(renderTrendAnalysis(analysis))
+	})
+}
 
-	// 文本格式
-	fmt.Println()
-	fmt.Println("📊 趋势分析（过去7天）")
-	fmt.Println()
-	fmt.Println("┌────────────────────────────────────────────────────────┐")
-	for _, d := range trendData {
-		bar := strings.Repeat("█", d.Completed)
-		if d.Completed == 0 {
-			bar = "░"
-		}
-		fmt.Printf("│ %s │ %-2d │ %-30s│\n", d.Date, d.Completed, bar)
-	}
-	fmt.Println("└────────────────────────────────────────────────────────┘")
-	fmt.Println()
-	fmt.Printf("本周完成: %d 个任务 | 日均: %.1f 个\n", totalCompleted, weeklyAvg)
-	return nil
+type AnalyzeReport struct {
+	Total      int    `json:"total"`
+	Active     int    `json:"active"`
+	Completed  int    `json:"completed"`
+	Q1         int    `json:"q1"`
+	Q2         int    `json:"q2"`
+	Q3         int    `json:"q3"`
+	Q4         int    `json:"q4"`
+	Urgent     int    `json:"urgent"`
+	High       int    `json:"high"`
+	Medium     int    `json:"medium"`
+	Low        int    `json:"low"`
+	Overdue    int    `json:"overdue"`
+	TodayTasks int    `json:"today_tasks"`
+	ThisWeek   int    `json:"this_week"`
+	Generated  string `json:"generated"`
+}
+
+func renderAnalyzeReport(report AnalyzeReport) string {
+	return clioutput.RenderStatPanel(clioutput.StatPanel{
+		Title: "📊 TaskBridge comprehensive analysis report",
+		Rows: []clioutput.StatRow{
+			{Icon: "📋", Label: "Task summary", Value: fmt.Sprintf("%d", report.Total), Hint: fmt.Sprintf("Active %d / Completed %d", report.Active, report.Completed)},
+			{Icon: "🎯", Label: "Quadrants", Value: fmt.Sprintf("Q1 %d", report.Q1), Hint: fmt.Sprintf("Q2 %d / Q3 %d / Q4 %d", report.Q2, report.Q3, report.Q4)},
+			{Icon: "🔴", Label: "Priority", Value: fmt.Sprintf("P0 %d", report.Urgent), Hint: fmt.Sprintf("P1 %d / P2 %d / P3 %d", report.High, report.Medium, report.Low)},
+			{Icon: "⏰", Label: "Time", Value: fmt.Sprintf("Overdue %d", report.Overdue), Hint: fmt.Sprintf("Today %d / This week %d", report.TodayTasks, report.ThisWeek)},
+		},
+		Footer: "Generated: " + report.Generated,
+	})
 }
 
 func runAnalyzeReport(cmd *cobra.Command, args []string) error {
@@ -533,110 +589,49 @@ func runAnalyzeReport(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Println()
-	fmt.Println("╔══════════════════════════════════════════════════════════════╗")
-	fmt.Println("║              📊 TaskBridge 综合分析报告                      ║")
-	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
-	fmt.Println()
-
-	// 汇总
-	var active, completed int
+	report := AnalyzeReport{Total: len(tasks), Generated: time.Now().Format("2006-01-02 15:04:05")}
 	for _, t := range tasks {
 		if t.Status == model.StatusCompleted {
-			completed++
-		} else {
-			active++
-		}
-	}
-
-	fmt.Println("## 📋 任务汇总")
-	fmt.Println()
-	fmt.Printf("  总任务数: %d | 活跃: %d | 已完成: %d\n", len(tasks), active, completed)
-	fmt.Println()
-
-	// 四象限分布
-	fmt.Println("## 🎯 四象限分布")
-	fmt.Println()
-	q1, q2, q3, q4 := 0, 0, 0, 0
-	for _, t := range tasks {
-		if t.Status == model.StatusCompleted {
+			report.Completed++
 			continue
 		}
+		report.Active++
 		switch t.Quadrant {
 		case model.QuadrantUrgentImportant:
-			q1++
+			report.Q1++
 		case model.QuadrantNotUrgentImportant:
-			q2++
+			report.Q2++
 		case model.QuadrantUrgentNotImportant:
-			q3++
+			report.Q3++
 		case model.QuadrantNotUrgentNotImportant:
-			q4++
-		}
-	}
-	fmt.Printf("  Q1 紧急且重要: %d | Q2 重要不紧急: %d | Q3 紧急不重要: %d | Q4 不紧急不重要: %d\n", q1, q2, q3, q4)
-	fmt.Println()
-
-	// 优先级分布
-	fmt.Println("## 🔴 优先级分布")
-	fmt.Println()
-	urgent, high, medium, low := 0, 0, 0, 0
-	for _, t := range tasks {
-		if t.Status == model.StatusCompleted {
-			continue
+			report.Q4++
 		}
 		switch t.Priority {
 		case model.PriorityUrgent:
-			urgent++
+			report.Urgent++
 		case model.PriorityHigh:
-			high++
+			report.High++
 		case model.PriorityMedium:
-			medium++
+			report.Medium++
 		case model.PriorityLow:
-			low++
+			report.Low++
 		}
-	}
-	fmt.Printf("  紧急: %d | 高: %d | 中: %d | 低: %d\n", urgent, high, medium, low)
-	fmt.Println()
-
-	// 时间分布
-	fmt.Println("## ⏰ 时间分布")
-	fmt.Println()
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	var overdue, todayTasks, thisWeek int
-	for _, t := range tasks {
-		if t.Status == model.StatusCompleted || t.DueDate == nil {
+		if t.DueDate == nil {
 			continue
 		}
+		now := time.Now()
+		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		if t.DueDate.Before(today) {
-			overdue++
+			report.Overdue++
 		} else if t.DueDate.Format("2006-01-02") == today.Format("2006-01-02") {
-			todayTasks++
+			report.TodayTasks++
 		} else if t.DueDate.Before(today.AddDate(0, 0, 7)) {
-			thisWeek++
+			report.ThisWeek++
 		}
 	}
-	fmt.Printf("  已过期: %d | 今天: %d | 本周: %d\n", overdue, todayTasks, thisWeek)
-	fmt.Println()
 
-	// 建议
-	fmt.Println("## 💡 建议")
-	fmt.Println()
-	if q1 > 3 {
-		fmt.Println("  ⚠️  Q1 任务过多，考虑重新评估优先级或委托他人")
-	}
-	if overdue > 0 {
-		fmt.Printf("  ⚠️  有 %d 个任务已过期，请尽快处理\n", overdue)
-	}
-	if q2 > 0 {
-		fmt.Println("  ✅ Q2 任务是长期目标的关键，建议安排固定时间处理")
-	}
-	if q4 > 5 {
-		fmt.Println("  🗑️  Q4 任务较多，考虑删除或归档")
-	}
-	fmt.Println()
-
-	fmt.Println("══════════════════════════════════════════════════════════════")
-	fmt.Printf("报告生成时间: %s\n", time.Now().Format("2006-01-02 15:04:05"))
-	return nil
+	projection := buildAnalyzeProjection("analyze.report", "Comprehensive analysis report generated.", report)
+	return printProjectionWithLegacyJSON(analyzeFormat, report, projection, func() {
+		fmt.Print(renderAnalyzeReport(report))
+	})
 }

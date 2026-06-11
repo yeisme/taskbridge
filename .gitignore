@@ -72,3 +72,4 @@ coverage.html
 .kilocode/
 .kilocodemodes
 .omx/
+.codegraph/

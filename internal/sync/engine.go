@@ -290,21 +290,23 @@ func (e *Engine) pull(ctx context.Context, p provider.Provider, result *Result, 
 		}
 	}
 
-	// 更新同步时间
-	if err := e.storage.SetLastSyncTime(ctx, source, time.Now()); err != nil {
-		result.Errors = append(result.Errors, Error{
-			Operation: "set_last_sync_time",
-			Error:     err.Error(),
-		})
-	}
-
-	// Flush pending writes
-	if f, ok := e.storage.(storage.Flushable); ok {
-		if err := f.Flush(); err != nil {
+	if !opts.DryRun {
+		// 只有真实写入成功路径才推进 last_sync_time；dry-run 必须保持本地存储零写入。
+		if err := e.storage.SetLastSyncTime(ctx, source, time.Now()); err != nil {
 			result.Errors = append(result.Errors, Error{
-				Operation: "flush",
+				Operation: "set_last_sync_time",
 				Error:     err.Error(),
 			})
+		}
+
+		// Flush pending writes
+		if f, ok := e.storage.(storage.Flushable); ok {
+			if err := f.Flush(); err != nil {
+				result.Errors = append(result.Errors, Error{
+					Operation: "flush",
+					Error:     err.Error(),
+				})
+			}
 		}
 	}
 
@@ -454,13 +456,15 @@ func (e *Engine) push(ctx context.Context, p provider.Provider, result *Result, 
 		e.deleteRemoteTasks(ctx, p, taskLists, localSourceRawIDs, opts.DryRun, result)
 	}
 
-	// Flush pending writes
-	if f, ok := e.storage.(storage.Flushable); ok {
-		if err := f.Flush(); err != nil {
-			result.Errors = append(result.Errors, Error{
-				Operation: "flush",
-				Error:     err.Error(),
-			})
+	if !opts.DryRun {
+		// dry-run 不能触发任何本地持久化 flush，包括调用前已有的 dirty state。
+		if f, ok := e.storage.(storage.Flushable); ok {
+			if err := f.Flush(); err != nil {
+				result.Errors = append(result.Errors, Error{
+					Operation: "flush",
+					Error:     err.Error(),
+				})
+			}
 		}
 	}
 

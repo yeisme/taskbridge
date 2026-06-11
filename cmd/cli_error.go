@@ -3,6 +3,8 @@ package cmd
 import (
 	"errors"
 	"fmt"
+
+	"github.com/yeisme/taskbridge/internal/clioutput"
 )
 
 type CLIError struct {
@@ -36,6 +38,29 @@ func usageError(message string) error {
 	return &CLIError{Message: message, ExitCode: 2}
 }
 
+func errorProjection(command string, err error) clioutput.Projection {
+	p := clioutput.New(command)
+	p.Status = clioutput.StatusFailed
+	p.Error = &clioutput.OutputError{
+		Code:    "internal_error",
+		Message: "command failed",
+	}
+	if err == nil {
+		return p
+	}
+	var cliErr *CLIError
+	if errors.As(err, &cliErr) {
+		code := "command_error"
+		if cliErr.ExitCode == 2 {
+			code = "usage_error"
+		}
+		p.Error.Code = code
+		p.Error.Message = cliErr.Error()
+		return p
+	}
+	p.Error.Message = err.Error()
+	return p
+}
 func formatCLIError(err error) string {
 	if err == nil {
 		return ""

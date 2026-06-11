@@ -643,22 +643,19 @@ func completionTime(task model.Task) *time.Time {
 func calcCompletionStreak(daily map[string]int, now time.Time, goalPerDay int) int {
 	streak := 0
 	cursor := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	for {
-		if daily[cursor.Format("2006-01-02")] < goalPerDay {
-			break
-		}
+	for daily[cursor.Format("2006-01-02")] >= goalPerDay {
 		streak++
 		cursor = cursor.AddDate(0, 0, -1)
 	}
 	return streak
 }
 func buildOverdueQuestions(overdueCount int, overload bool) []string {
-	qs := []string{"哪些任务应该延期？", "哪些任务应该删除？"}
+	qs := []string{"Which tasks should be deferred?", "Which tasks should be deleted?"}
 	if overdueCount > 0 {
-		qs = append(qs, "哪些任务值得拆分后再排期？")
+		qs = append(qs, "Which tasks should be split before scheduling?")
 	}
 	if overload {
-		qs = append(qs, "是否需要降低近期承诺数量？")
+		qs = append(qs, "Should near-term commitments be reduced?")
 	}
 	return qs
 }

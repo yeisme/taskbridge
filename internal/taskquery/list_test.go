@@ -40,6 +40,17 @@ func TestBuildListQueryExplicitStatusBypassesDefault(t *testing.T) {
 	}
 }
 
+func TestBuildListQueryNormalizesCanceledAlias(t *testing.T) {
+	query, err := BuildListQuery(ListOptions{Status: "canceled", StatusChanged: true})
+	if err != nil {
+		t.Fatalf("BuildListQuery returned error: %v", err)
+	}
+
+	if len(query.Query.Statuses) != 1 || query.Query.Statuses[0] != model.StatusCancelled {
+		t.Fatalf("Statuses=%v, want [%q]", query.Query.Statuses, model.StatusCancelled)
+	}
+}
+
 func TestBuildListQueryResolvesProviderAlias(t *testing.T) {
 	query, err := BuildListQuery(ListOptions{Source: "ms"})
 	if err != nil {

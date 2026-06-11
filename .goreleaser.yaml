@@ -10,15 +10,13 @@ version: 2
 
 project_name: taskbridge
 
-before:
-  hooks:
-    - go mod tidy
-
 builds:
   - id: taskbridge
     binary: taskbridge
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
     ldflags:
       - -s -w -X github.com/yeisme/taskbridge/pkg/buildinfo.Version={{.Version}} -X github.com/yeisme/taskbridge/pkg/buildinfo.GitCommit={{.Commit}} -X github.com/yeisme/taskbridge/pkg/buildinfo.BuildDate={{.Date}}
     goos:

@@ -26,37 +26,37 @@ var (
 
 var agentCmd = &cobra.Command{
 	Use:   "agent",
-	Short: "Agent 安全执行入口",
+	Short: "Agent secure execution entry",
 }
 
 var agentCapabilitiesCmd = &cobra.Command{
 	Use:   "capabilities",
-	Short: "输出 Agent 可调用能力",
+	Short: "Output Agent callability",
 	RunE:  runAgentCapabilities,
 }
 
 var agentTodayCmd = &cobra.Command{
 	Use:   "today",
-	Short: "输出 Agent 友好的 today",
+	Short: "Output Agent friendly today",
 	RunE:  runAgentToday,
 }
 
 var agentPlanCmd = &cobra.Command{
 	Use:   "plan <goal>",
-	Short: "生成目标计划预览",
+	Short: "Generate target plan preview",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runAgentPlan,
 }
 
 var agentExecuteCmd = &cobra.Command{
 	Use:   "execute",
-	Short: "执行 action file",
+	Short: "Execute action file",
 	RunE:  runAgentExecute,
 }
 
 var agentSchemasCmd = &cobra.Command{
 	Use:   "schemas",
-	Short: "输出 Agent JSON schema 名称",
+	Short: "Output Agent JSON schema name",
 	RunE:  runAgentSchemas,
 }
 
@@ -69,13 +69,13 @@ func init() {
 	agentCmd.AddCommand(agentSchemasCmd)
 
 	for _, cmd := range []*cobra.Command{agentCapabilitiesCmd, agentTodayCmd, agentPlanCmd, agentExecuteCmd, agentSchemasCmd} {
-		cmd.Flags().StringVar(&agentRequestID, "request-id", "", "请求 ID")
+		cmd.Flags().StringVar(&agentRequestID, "request-id", "", "Request ID")
 	}
-	agentPlanCmd.Flags().BoolVar(&agentDryRun, "dry-run", true, "模拟执行")
-	agentPlanCmd.Flags().IntVar(&agentHorizonDays, "horizon-days", 14, "规划周期天数")
-	agentExecuteCmd.Flags().StringVar(&agentActionFile, "action-file", "", "action file 路径")
-	agentExecuteCmd.Flags().BoolVar(&agentDryRun, "dry-run", true, "模拟执行")
-	agentExecuteCmd.Flags().BoolVar(&agentConfirm, "confirm", false, "确认执行危险动作")
+	agentPlanCmd.Flags().BoolVar(&agentDryRun, "dry-run", true, "Simulate execution")
+	agentPlanCmd.Flags().IntVar(&agentHorizonDays, "horizon-days", 14, "Planning cycle days")
+	agentExecuteCmd.Flags().StringVar(&agentActionFile, "action-file", "", "action file path")
+	agentExecuteCmd.Flags().BoolVar(&agentDryRun, "dry-run", true, "Simulate execution")
+	agentExecuteCmd.Flags().BoolVar(&agentConfirm, "confirm", false, "Confirm execution of dangerous actions")
 	_ = agentExecuteCmd.MarkFlagRequired("action-file")
 }
 
@@ -117,7 +117,7 @@ func runAgentPlan(_ *cobra.Command, args []string) error {
 			MaxTasks:    10,
 		})
 		if err != nil {
-			return printAgent(agentcontract.Error(requestID(), "agent_plan_failed", err.Error(), "检查目标文本后重试"))
+			return printAgent(agentcontract.Error(requestID(), "agent_plan_failed", err.Error(), "Check the target text and try again"))
 		}
 		payload := map[string]interface{}{
 			"schema":          "taskbridge.agent-plan.v1",
@@ -153,7 +153,7 @@ func runAgentPlan(_ *cobra.Command, args []string) error {
 func runAgentExecute(_ *cobra.Command, _ []string) error {
 	file, err := actionfile.Load(agentActionFile)
 	if err != nil {
-		return printAgent(agentcontract.Error(requestID(), "action_file_invalid", err.Error(), "检查 action file"))
+		return printAgent(agentcontract.Error(requestID(), "action_file_invalid", err.Error(), "Check action file"))
 	}
 	taskStore, _, cleanup, err := getCLIStores()
 	if err != nil {
@@ -190,7 +190,7 @@ func runAgentSchemas(_ *cobra.Command, _ []string) error {
 func printAgent(result agentcontract.Result) error {
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		return commandError("序列化 Agent 输出失败", err)
+		return commandError("Failed to serialize Agent output", err)
 	}
 	fmt.Println(string(data))
 	return nil

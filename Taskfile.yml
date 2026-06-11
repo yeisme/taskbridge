@@ -1,45 +1,79 @@
 version: "3"
 
+vars:
+  BIN_DIR: dist
+  BIN: dist/taskbridge
+  BASE_REV: HEAD~
+  AIR: air
+  GOLANGCI_LINT: golangci-lint
+  GORELEASER: goreleaser
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || printf dev
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || printf unknown
+  BUILD_DATE:
+    sh: date -u +%Y-%m-%dT%H:%M:%SZ
+  LDFLAGS: >-
+    -s -w
+    -X github.com/yeisme/taskbridge/pkg/buildinfo.Version={{.VERSION}}
+    -X github.com/yeisme/taskbridge/pkg/buildinfo.GitCommit={{.COMMIT}}
+    -X github.com/yeisme/taskbridge/pkg/buildinfo.BuildDate={{.BUILD_DATE}}
+
 tasks:
-  # 构建任务
-  build:
-    desc: 构建当前平台二进制文件
+  default:
+    desc: 列出可用开发任务
     cmds:
-      - go build -o taskbridge .
+      - task --list
+    silent: true
 
-  # Goreleaser 任务
-  build:snapshot:
-    desc: 使用 goreleaser 构建快照版本（仅当前系统架构）
+  tools:install:
+    desc: 安装可选 Go 开发工具（golangci-lint、GoReleaser、Air）
     cmds:
-      - goreleaser build --snapshot --clean --single-target
+      - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.2.0
+      - go install github.com/goreleaser/goreleaser/v2@v2.12.6
+      - go install github.com/air-verse/air@v1.63.0
 
-  build:release:
-    desc: 使用 goreleaser 构建正式版本
+  deps:
+    desc: 下载 Go 模块依赖
     cmds:
-      - goreleaser build --clean
+      - go mod download
 
-  release:
-    desc: 使用 goreleaser 发布版本
+  tidy:
+    desc: 整理 go.mod 和 go.sum
     cmds:
-      - goreleaser release --clean
+      - go mod tidy
 
-  # Golangci-lint 任务
+  mod-check:
+    desc: 检查 go.mod/go.sum 是否已整理
+    cmds:
+      - go mod tidy
+      - git diff --exit-code -- go.mod go.sum
+
   fmt:
     desc: 使用 golangci-lint 格式化代码
     cmds:
-      - golangci-lint fmt
+      - '{{.GOLANGCI_LINT}} fmt'
+
+  fmt-check:
+    desc: 检查 golangci-lint 格式化差异
+    cmds:
+      - '{{.GOLANGCI_LINT}} fmt --diff'
 
   lint:
     desc: 使用 golangci-lint 进行代码检查
     cmds:
-      - golangci-lint run
+      - '{{.GOLANGCI_LINT}} run'
 
-  lint-fix:
-    desc: 使用 golangci-lint 进行代码检查并自动修复
+  lint:new:
+    desc: 只检查相对 BASE_REV 的新增 lint 问题
     cmds:
-      - golangci-lint run --fix
+      - '{{.GOLANGCI_LINT}} run --new-from-rev={{.BASE_REV}}'
 
-  # 测试任务
+  lint:fix:
+    desc: 使用 golangci-lint 自动修复可修复问题
+    cmds:
+      - '{{.GOLANGCI_LINT}} run --fix'
+
   test:
     desc: 运行所有测试
     cmds:
@@ -50,7 +84,82 @@ tasks:
     cmds:
       - go test -v ./...
 
-  # Docker 任务
+  test:race:
+    desc: 运行 race detector 测试
+    cmds:
+      - go test -race ./...
+
+  test:integration:
+    desc: 运行 CLI 合同集成测试并写入脱敏 evidence
+    cmds:
+      - |
+        set -eu
+        run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+        dir="temp/integration-test-runs/$run_id"
+        command="go test ./cmd -run 'Output|Provider|Auth|List|Config|Version' -count=1"
+        mkdir -p "$dir/artifacts"
+        printf '%s\n' "$command" > "$dir/command.txt"
+        python3 -c 'import json, os, sys; keys=("GOOS","GOARCH","TASKBRIDGE_HOME","TASKBRIDGE_STORAGE_PATH","NO_COLOR"); json.dump({k: os.environ.get(k, "") for k in keys}, open(sys.argv[1], "w"), ensure_ascii=False, indent=2)' "$dir/env.json"
+        start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        start_s="$(date +%s)"
+        set +e
+        sh -c "$command" > "$dir/stdout.log" 2> "$dir/stderr.log"
+        code=$?
+        set -e
+        finish="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        finish_s="$(date +%s)"
+        python3 -c 'import json, sys; code=int(sys.argv[1]); start_s=int(sys.argv[4]); finish_s=int(sys.argv[5]); json.dump({"schema_version":"taskbridge.integration-evidence.v1","project":"taskbridge","run_id":sys.argv[2],"layer":"cli-contract","command":sys.argv[3],"status":"success" if code == 0 else "failed","exit_code":code,"started_at":sys.argv[6],"finished_at":sys.argv[7],"duration_ms":max(0, finish_s-start_s)*1000,"evidence":{"command":"command.txt","stdout":"stdout.log","stderr":"stderr.log","env":"env.json","artifacts":"artifacts/"},"redaction":{"env":"allowlist","secrets":"not captured"}}, open(sys.argv[8], "w"), ensure_ascii=False, indent=2)' "$code" "$run_id" "$command" "$start_s" "$finish_s" "$start" "$finish" "$dir/summary.json"
+        exit "$code"
+
+  build:
+    desc: 构建当前平台二进制文件到 dist/
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BIN}} .
+      - '{{.BIN}} --help >/dev/null'
+
+  install:
+    desc: 安装当前平台 taskbridge 二进制到 Go bin
+    cmds:
+      - go install -trimpath -ldflags '{{.LDFLAGS}}' .
+
+  snapshot:
+    desc: 使用 GoReleaser 构建当前系统架构快照
+    cmds:
+      - '{{.GORELEASER}} build --snapshot --clean --single-target'
+
+  release:check:
+    desc: 校验 GoReleaser 配置
+    cmds:
+      - '{{.GORELEASER}} check'
+
+  release:local:
+    desc: 本地演练 GoReleaser 发布流程（不发布）
+    cmds:
+      - '{{.GORELEASER}} release --snapshot --clean --skip=publish'
+
+  release:build:
+    desc: 使用 GoReleaser 构建正式产物（不发布）
+    cmds:
+      - '{{.GORELEASER}} build --clean'
+
+  release:
+    desc: 使用 GoReleaser 发布版本
+    cmds:
+      - '{{.GORELEASER}} release --clean'
+
+  dev:
+    desc: 格式化、测试并构建本地二进制
+    cmds:
+      - task: fmt
+      - task: test
+      - task: build
+
+  dev:watch:
+    desc: 使用 Air 监听文件变化并重建 CLI（需安装 air）
+    cmds:
+      - '{{.AIR}}'
+
   docker:build:
     desc: 构建 Docker 镜像
     cmds:
@@ -114,16 +223,17 @@ tasks:
     cmds:
       - docker compose --profile mongodb up -d
 
-  # 组合任务
-  ci:
-    desc: 运行 CI 检查（fmt + lint + build）
-    deps: [fmt, lint]
+  check:
+    desc: 运行本地质量门禁（依赖、模块、格式、lint、测试、构建）
     cmds:
-      - goreleaser build --snapshot --clean
+      - task: deps
+      - task: mod-check
+      - task: fmt-check
+      - task: lint
+      - task: test
+      - task: build
 
-  # 开发任务
-  dev:
-    desc: 开发模式 - 格式化并构建快照
-    deps: [fmt]
+  ci:
+    desc: 运行 CI 检查（check）
     cmds:
-      - goreleaser build --snapshot -- clean
+      - task: check

@@ -8,10 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/yeisme/taskbridge/internal/clioutput"
 	"github.com/yeisme/taskbridge/internal/model"
 	"github.com/yeisme/taskbridge/internal/provider"
 	"github.com/yeisme/taskbridge/internal/storage"
-	"github.com/yeisme/taskbridge/pkg/output"
+	"github.com/yeisme/taskbridge/internal/taskoutput"
 	"github.com/yeisme/taskbridge/pkg/ui"
 )
 
@@ -21,19 +22,14 @@ var (
 	listsSyncNow bool
 )
 
-type listSummary struct {
-	Provider       string `json:"provider"`
-	ListID         string `json:"list_id"`
-	ListName       string `json:"list_name"`
-	TaskCountLocal int    `json:"task_count_local"`
-}
+type listSummary = taskoutput.TaskListSummary
 
 var listsCmd = &cobra.Command{
 	Use:   "lists",
-	Short: "列出任务清单",
-	Long: `列出本地可用的任务清单（便于获取 list_id）。
+	Short: "Make a to-do list",
+	Long: `List locally available tasks (for easy access to list_id).
 
-示例:
+Example:
   taskbridge lists
   taskbridge lists --source ms
   taskbridge lists --sync-now --source microsoft
@@ -44,9 +40,9 @@ var listsCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(listsCmd)
 
-	listsCmd.Flags().StringVarP(&listsSource, "source", "s", "", "按来源筛选（支持简写，如 ms/g/tick/todo）")
-	listsCmd.Flags().StringVarP(&listsFormat, "format", "f", "table", "输出格式（table, json）")
-	listsCmd.Flags().BoolVar(&listsSyncNow, "sync-now", false, "查询前先同步远程任务到本地")
+	listsCmd.Flags().StringVarP(&listsSource, "source", "s", "", "Filter by source (abbreviations supported, such as ms/g/tick/todo)")
+	listsCmd.Flags().StringVarP(&listsFormat, "format", "f", "table", "Output format (table, json)")
+	listsCmd.Flags().BoolVar(&listsSyncNow, "sync-now", false, "Before querying, synchronize the remote task to the local")
 }
 
 func runLists(cmd *cobra.Command, args []string) error {
@@ -56,25 +52,25 @@ func runLists(cmd *cobra.Command, args []string) error {
 	if listsSource != "" {
 		resolvedSource = provider.ResolveProviderName(listsSource)
 		if !provider.IsValidProvider(resolvedSource) {
-			return usageError("不支持的来源: " + listsSource)
+			return usageError("Unsupported sources:" + listsSource)
 		}
 	}
 
 	if listsSyncNow {
 		if err := syncNowForList(ctx, resolvedSource); err != nil {
-			return commandError("同步失败", err)
+			return commandError("Sync failed", err)
 		}
 	}
 
 	store, cleanup, err := getStore()
 	if err != nil {
-		return commandError("创建存储失败", err)
+		return commandError("Failed to create storage", err)
 	}
 	defer cleanup()
 
 	lists, err := store.ListTaskLists(ctx)
 	if err != nil {
-		return commandError("查询清单失败", err)
+		return commandError("Query list failed", err)
 	}
 
 	if resolvedSource != "" {
@@ -87,17 +83,13 @@ func runLists(cmd *cobra.Command, args []string) error {
 		lists = filtered
 	}
 
-	if len(lists) == 0 {
-		fmt.Println("📭 没有找到清单")
-		if !listsSyncNow {
-			fmt.Println("💡 可尝试: taskbridge lists --sync-now")
+	taskCounts := map[string]int{}
+	if len(lists) > 0 {
+		var err error
+		taskCounts, err = buildTaskCountByList(ctx, store, resolvedSource)
+		if err != nil {
+			return commandError("Failed to count the number of tasks", err)
 		}
-		return nil
-	}
-
-	taskCounts, err := buildTaskCountByList(ctx, store, resolvedSource)
-	if err != nil {
-		return commandError("统计任务数量失败", err)
 	}
 
 	summaries := make([]listSummary, 0, len(lists))
@@ -117,14 +109,26 @@ func runLists(cmd *cobra.Command, args []string) error {
 		return summaries[i].Provider < summaries[j].Provider
 	})
 
+	projection := taskoutput.NewTaskListsProjection("task.lists", summaries)
+	if len(summaries) == 0 && listsSyncNow {
+		projection.Actions = nil
+	}
+	if globalProjectionModeRequested() {
+		return printProjection(listsFormat, projection, nil)
+	}
+
 	switch listsFormat {
 	case "json":
 		data, err := json.MarshalIndent(summaries, "", "  ")
 		if err != nil {
-			return commandError("序列化失败", err)
+			return commandError("Serialization failed", err)
 		}
-		fmt.Println(string(data))
+		fmt.Fprintln(cmd.OutOrStdout(), string(data))
 	default:
+		if len(summaries) == 0 {
+			fmt.Fprint(cmd.OutOrStdout(), clioutput.RenderSummary(projection))
+			return nil
+		}
 		printListsTable(summaries)
 	}
 	return nil
@@ -162,8 +166,8 @@ func printListsTable(lists []listSummary) {
 	for _, list := range lists {
 		table.AddRow(
 			list.Provider,
-			output.TruncateDisplay(list.ListID, 30),
-			output.TruncateDisplay(list.ListName, 26),
+			taskoutput.TruncateDisplay(list.ListID, 30),
+			taskoutput.TruncateDisplay(list.ListName, 26),
 			fmt.Sprintf("%d", list.TaskCountLocal),
 		)
 	}
@@ -171,5 +175,5 @@ func printListsTable(lists []listSummary) {
 	fmt.Println()
 	fmt.Println(table.Render())
 	fmt.Println()
-	fmt.Printf("共 %d 个清单\n", len(lists))
+	fmt.Printf("Total %d lists\n", len(lists))
 }

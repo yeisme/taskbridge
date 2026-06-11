@@ -1,52 +1,48 @@
 package cmd
 
 import (
-	"fmt"
 	"runtime"
 
 	"github.com/spf13/cobra"
+	"github.com/yeisme/taskbridge/internal/clioutput"
 	"github.com/yeisme/taskbridge/pkg/buildinfo"
 )
 
-// versionCmd 版本命令
+// versionCmd version command
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "显示版本信息",
-	Long: `显示 TaskBridge 的版本信息。
+	Short: "Show version information",
+	Long: `Display TaskBridge version information.
 
-示例:
+Example:
   taskbridge version
   taskbridge version --json`,
-	Run: runVersion,
+	RunE: runVersion,
 }
 
-var versionJSON bool
+func buildVersionProjection() clioutput.Projection {
+	p := clioutput.New("version.show")
+	p.Summary = "TaskBridge - CLI workflow tool for AI and multi-Todo platforms"
+	p.Facts["version"] = buildinfo.Version
+	p.Facts["git_commit"] = buildinfo.GitCommit
+	p.Facts["build_date"] = buildinfo.BuildDate
+	p.Facts["go_version"] = runtime.Version()
+	p.Facts["platform"] = runtime.GOOS + "/" + runtime.GOARCH
+	p.Data = map[string]any{
+		"version":    buildinfo.Version,
+		"git_commit": buildinfo.GitCommit,
+		"build_date": buildinfo.BuildDate,
+		"go_version": runtime.Version(),
+		"platform":   runtime.GOOS + "/" + runtime.GOARCH,
+	}
+	return p
+}
 
 func init() {
 	rootCmd.AddCommand(versionCmd)
-	versionCmd.Flags().BoolVar(&versionJSON, "json", false, "以 JSON 格式输出")
 }
 
-func runVersion(_ *cobra.Command, _ []string) {
-	if versionJSON {
-		fmt.Printf(`{
-  "version": "%s",
-  "git_commit": "%s",
-  "build_date": "%s",
-  "go_version": "%s",
-  "platform": "%s/%s"
-}`, buildinfo.Version, buildinfo.GitCommit, buildinfo.BuildDate, runtime.Version(), runtime.GOOS, runtime.GOARCH)
-		fmt.Println()
-		return
-	}
-
-	fmt.Println()
-	fmt.Println("  TaskBridge - 面向 AI 与多 Todo 平台的 CLI 工作流工具")
-	fmt.Println()
-	fmt.Printf("  版本:       %s\n", buildinfo.Version)
-	fmt.Printf("  Git 提交:   %s\n", buildinfo.GitCommit)
-	fmt.Printf("  构建时间:   %s\n", buildinfo.BuildDate)
-	fmt.Printf("  Go 版本:    %s\n", runtime.Version())
-	fmt.Printf("  平台:       %s/%s\n", runtime.GOOS, runtime.GOARCH)
-	fmt.Println()
+func runVersion(_ *cobra.Command, _ []string) error {
+	p := buildVersionProjection()
+	return printProjection("text", p, nil)
 }

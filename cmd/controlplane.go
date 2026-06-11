@@ -3,13 +3,15 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/yeisme/taskbridge/internal/actionfile"
+	"github.com/yeisme/taskbridge/internal/clioutput"
 	"github.com/yeisme/taskbridge/internal/controlplane"
-	controlrender "github.com/yeisme/taskbridge/internal/controlplane/render"
+	"github.com/yeisme/taskbridge/pkg/ui"
 )
 
 var (
@@ -24,25 +26,25 @@ var (
 
 var todayCmd = &cobra.Command{
 	Use:   "today",
-	Short: "每日任务工作台",
+	Short: "Daily task workbench",
 	RunE:  runToday,
 }
 
 var nextCmd = &cobra.Command{
 	Use:   "next",
-	Short: "推荐当前下一步任务",
+	Short: "Recommend current next steps",
 	RunE:  runNext,
 }
 
 var inboxCmd = &cobra.Command{
 	Use:   "inbox",
-	Short: "列出待整理任务",
+	Short: "List tasks to be organized",
 	RunE:  runInbox,
 }
 
 var reviewCmd = &cobra.Command{
 	Use:   "review",
-	Short: "任务健康复盘",
+	Short: "Task health review",
 	RunE:  runReview,
 }
 
@@ -53,16 +55,16 @@ func init() {
 	rootCmd.AddCommand(reviewCmd)
 
 	for _, cmd := range []*cobra.Command{todayCmd, nextCmd, inboxCmd, reviewCmd} {
-		cmd.Flags().StringVarP(&controlFormat, "format", "f", "text", "输出格式 (text, json)")
-		cmd.Flags().StringVar(&controlSource, "source", "", "按来源筛选（支持简写）")
-		cmd.Flags().BoolVar(&controlMock, "mock", false, "使用内置模拟数据（无需 provider 认证）")
+		cmd.Flags().StringVarP(&controlFormat, "format", "f", "text", "Output format (text, json)")
+		cmd.Flags().StringVar(&controlSource, "source", "", "Filter by source (abbreviations supported)")
+		cmd.Flags().BoolVar(&controlMock, "mock", false, "Use built-in mock data (no provider authentication required)")
 	}
 	for _, cmd := range []*cobra.Command{nextCmd, inboxCmd} {
-		cmd.Flags().IntVar(&controlLimit, "limit", 0, "最多返回任务数")
+		cmd.Flags().IntVar(&controlLimit, "limit", 0, "Maximum number of returned tasks")
 	}
-	reviewCmd.Flags().StringVar(&reviewApplyFile, "apply-file", "", "执行结构化 action file")
-	reviewCmd.Flags().BoolVar(&reviewDryRun, "dry-run", false, "模拟执行 action file")
-	reviewCmd.Flags().BoolVar(&reviewConfirm, "confirm", false, "确认执行 action file")
+	reviewCmd.Flags().StringVar(&reviewApplyFile, "apply-file", "", "Execute structured action file")
+	reviewCmd.Flags().BoolVar(&reviewDryRun, "dry-run", false, "Simulate execution of action file")
+	reviewCmd.Flags().BoolVar(&reviewConfirm, "confirm", false, "Confirm execution of action file")
 }
 
 func controlService() (*controlplane.Service, func(), error) {
@@ -89,12 +91,12 @@ func runToday(_ *cobra.Command, _ []string) error {
 
 	service, cleanup, err := controlServiceForCommand()
 	if err != nil {
-		return commandError("初始化控制面失败", err)
+		return commandError("Failed to initialize control plane", err)
 	}
 	defer cleanup()
 	result, err := service.Today(ctx, controlplane.Options{Source: controlSource})
 	if err != nil {
-		return commandError("生成今日工作台失败", err)
+		return commandError("Failed to generate today's workbench", err)
 	}
 	return printTodayResult(controlFormat, result)
 }
@@ -104,14 +106,14 @@ func runNext(_ *cobra.Command, _ []string) error {
 
 	service, cleanup, err := controlServiceForCommand()
 	if err != nil {
-		return commandError("初始化控制面失败", err)
+		return commandError("Failed to initialize control plane", err)
 	}
 	defer cleanup()
 	result, err := service.Next(ctx, controlplane.Options{Source: controlSource, Limit: controlLimit})
 	if err != nil {
-		return commandError("生成下一步失败", err)
+		return commandError("Failed to generate next step", err)
 	}
-	return printTaskListResult(controlFormat, "建议下一步", result)
+	return printTaskListResult(controlFormat, "Suggest next steps", result)
 }
 
 func runInbox(_ *cobra.Command, _ []string) error {
@@ -119,14 +121,14 @@ func runInbox(_ *cobra.Command, _ []string) error {
 
 	service, cleanup, err := controlServiceForCommand()
 	if err != nil {
-		return commandError("初始化控制面失败", err)
+		return commandError("Failed to initialize control plane", err)
 	}
 	defer cleanup()
 	result, err := service.Inbox(ctx, controlplane.Options{Source: controlSource, Limit: controlLimit})
 	if err != nil {
-		return commandError("生成 inbox 失败", err)
+		return commandError("Failed to generate inbox", err)
 	}
-	return printTaskListResult(controlFormat, "待整理任务", result)
+	return printTaskListResult(controlFormat, "Tasks to be organized", result)
 }
 
 func runReview(_ *cobra.Command, _ []string) error {
@@ -137,16 +139,15 @@ func runReview(_ *cobra.Command, _ []string) error {
 
 	service, cleanup, err := controlServiceForCommand()
 	if err != nil {
-		return commandError("初始化控制面失败", err)
+		return commandError("Failed to initialize control plane", err)
 	}
 	defer cleanup()
 	result, err := service.Review(ctx, controlplane.Options{Source: controlSource})
 	if err != nil {
-		return commandError("生成复盘失败", err)
+		return commandError("Failed to generate review disk", err)
 	}
-	return printStructured(controlFormat, result, func() {
-		fmt.Print(controlrender.Review(result))
-	})
+	projection := buildReviewProjection(result)
+	return printProjectionWithLegacyJSON(controlFormat, result, projection, func() { fmt.Print(renderControlReview(result, projection)) })
 }
 
 func runReviewApplyFile() error {
@@ -155,42 +156,175 @@ func runReviewApplyFile() error {
 	}
 	actions, err := actionfile.Load(reviewApplyFile)
 	if err != nil {
-		return commandError("读取 action file 失败", err)
+		return commandError("Failed to read action file", err)
 	}
 	taskStore, _, cleanup, err := getCLIStores()
 	if err != nil {
-		return commandError("初始化存储失败", err)
+		return commandError("Failed to initialize storage", err)
 	}
 	defer cleanup()
 	result := actionfile.Executor{TaskStore: taskStore}.Execute(context.Background(), actions, actionfile.ExecuteOptions{DryRun: reviewDryRun, Confirm: reviewConfirm})
-	return printStructured(controlFormat, result, func() {
-		fmt.Printf("action file: %s\n", reviewApplyFile)
-		fmt.Printf("dry_run: %v\n", result.DryRun)
-		fmt.Printf("updated: %d skipped: %d\n", result.Updated, result.Skipped)
-		if result.RequiresConfirmation {
-			fmt.Println("需要确认：重新运行时加入 --confirm")
-		}
-		for _, errText := range result.Errors {
-			fmt.Printf("- error: %s\n", errText)
-		}
-	})
+	projection := buildReviewApplyProjection(result)
+	return printProjectionWithLegacyJSON(controlFormat, result, projection, func() { fmt.Print(renderProjectProjection("Review action file", projection)) })
 }
 
 func validateReviewApplyMode(dryRun, confirm bool) error {
 	if dryRun || confirm {
 		return nil
 	}
-	return usageError("执行 --apply-file 时必须显式加入 --dry-run 或 --confirm")
+	return usageError("You must explicitly add --dry-run or --confirm when executing --apply-file")
 }
 
 func printTodayResult(format string, result *controlplane.TodayResult) error {
-	return printStructured(format, result, func() {
-		fmt.Print(controlrender.Today(result))
-	})
+	projection := buildTodayProjection(result)
+	return printProjectionWithLegacyJSON(format, result, projection, func() { fmt.Print(renderControlToday(result, projection)) })
 }
 
 func printTaskListResult(format, title string, result *controlplane.ListResult) error {
-	return printStructured(format, result, func() {
-		fmt.Print(controlrender.TaskList(title, result))
-	})
+	projection := buildTaskListProjection(title, result)
+	return printProjectionWithLegacyJSON(format, result, projection, func() { fmt.Print(renderControlTaskList(result, projection)) })
+}
+
+func buildTodayProjection(result *controlplane.TodayResult) clioutput.Projection {
+	p := clioutput.New("task.today")
+	p.Summary = "Daily workbench generated."
+	if result != nil {
+		p.Status = cliStatusFromString(result.Status)
+		p.Facts["date"] = result.Date
+		for key, value := range result.Summary {
+			p.Facts[key] = value
+		}
+		p.Facts["sections"] = len(result.Sections)
+		p.Facts["suggested_actions"] = len(result.SuggestedActions)
+		p.Risks = append(p.Risks, result.Warnings...)
+		if len(result.SuggestedActions) > 0 {
+			p.Actions = append(p.Actions, clioutput.Action{Name: "review", Command: "taskbridge review"})
+		}
+	}
+	p.Data = result
+	return p
+}
+
+func buildTaskListProjection(title string, result *controlplane.ListResult) clioutput.Projection {
+	command := "task.list"
+	summary := title + "."
+	if result != nil && result.Schema == controlplane.SchemaNext {
+		command = "task.next"
+		summary = "Next steps listed."
+	} else if result != nil && result.Schema == controlplane.SchemaInbox {
+		command = "task.inbox"
+		summary = "Inbox tasks listed."
+	}
+	p := clioutput.New(command)
+	p.Summary = summary
+	if result != nil {
+		p.Status = cliStatusFromString(result.Status)
+		p.Facts["count"] = result.Count
+		p.Risks = append(p.Risks, result.Warnings...)
+	}
+	p.Data = result
+	return p
+}
+
+func buildReviewProjection(result *controlplane.ReviewResult) clioutput.Projection {
+	p := clioutput.New("task.review")
+	p.Summary = "Task health review generated."
+	if result != nil {
+		p.Status = cliStatusFromString(result.Status)
+		for key, value := range result.Summary {
+			p.Facts[key] = value
+		}
+		p.Facts["suggested_actions"] = len(result.SuggestedActions)
+		p.Risks = append(p.Risks, result.Warnings...)
+		if len(result.SuggestedActions) > 0 {
+			p.Actions = append(p.Actions, clioutput.Action{Name: "apply", Command: "taskbridge review --apply-file <path> --dry-run"})
+		}
+	}
+	p.Data = result
+	return p
+}
+
+func buildReviewApplyProjection(result actionfile.ExecuteResult) clioutput.Projection {
+	p := buildActionExecuteProjection("task.review_apply", "Review action file processed.", result)
+	if reviewApplyFile != "" {
+		p.Facts["action_file"] = reviewApplyFile
+	}
+	if result.RequiresConfirmation {
+		p.Actions = []clioutput.Action{{Name: "confirm", Command: "taskbridge review --apply-file " + reviewApplyFile + " --confirm"}}
+	}
+	return p
+}
+
+func renderControlToday(result *controlplane.TodayResult, projection clioutput.Projection) string {
+	var b strings.Builder
+	b.WriteString("Daily workbench\n\n")
+	b.WriteString(renderProjectionFacts(projection))
+	if result == nil {
+		return renderRecommendedAction(b.String(), projection)
+	}
+	for _, section := range result.Sections {
+		b.WriteString("\n")
+		b.WriteString(section.Title)
+		b.WriteString("\n")
+		appendTaskRefsTable(&b, section.Tasks)
+	}
+	if len(result.ProjectNext) > 0 {
+		b.WriteString("\nProject next steps\n")
+		table := ui.NewTable("Project", "Name", "Next task", "Risk")
+		for _, item := range result.ProjectNext {
+			table.AddRow(item.ProjectID, item.ProjectName, item.NextTaskID, item.RiskLevel)
+		}
+		b.WriteString(table.Render())
+		b.WriteString("\n")
+	}
+	return renderRecommendedAction(b.String(), projection)
+}
+
+func renderControlTaskList(result *controlplane.ListResult, projection clioutput.Projection) string {
+	var b strings.Builder
+	title := "Tasks"
+	if result != nil && result.Schema == controlplane.SchemaNext {
+		title = "Next steps"
+	} else if result != nil && result.Schema == controlplane.SchemaInbox {
+		title = "Inbox tasks"
+	}
+	b.WriteString(title)
+	b.WriteString("\n\n")
+	b.WriteString(renderProjectionFacts(projection))
+	if result == nil || len(result.Tasks) == 0 {
+		b.WriteString("\nNo tasks found.\n")
+		return renderRecommendedAction(b.String(), projection)
+	}
+	b.WriteString("\nTask table\n")
+	appendTaskRefsTable(&b, result.Tasks)
+	return renderRecommendedAction(b.String(), projection)
+}
+
+func renderControlReview(result *controlplane.ReviewResult, projection clioutput.Projection) string {
+	var b strings.Builder
+	b.WriteString("Task health review\n\n")
+	b.WriteString(renderProjectionFacts(projection))
+	if result != nil && len(result.SuggestedActions) > 0 {
+		b.WriteString("\nSuggested actions\n")
+		table := ui.NewTable("Action", "Task", "Project", "Reason", "Confirm")
+		for _, action := range result.SuggestedActions {
+			table.AddRow(action.Type, action.TaskID, action.ProjectID, action.Reason, fmt.Sprint(action.RequiresConfirmation))
+		}
+		b.WriteString(table.Render())
+		b.WriteString("\n")
+	}
+	return renderRecommendedAction(b.String(), projection)
+}
+
+func appendTaskRefsTable(b *strings.Builder, tasks []controlplane.TaskRef) {
+	if len(tasks) == 0 {
+		b.WriteString("No tasks found.\n")
+		return
+	}
+	table := ui.NewTable("Task", "Title", "Status", "Priority", "Source", "Reason")
+	for _, task := range tasks {
+		table.AddRow(task.ID, task.Title, task.Status, fmt.Sprint(task.Priority), task.Source, task.Reason)
+	}
+	b.WriteString(table.Render())
+	b.WriteString("\n")
 }

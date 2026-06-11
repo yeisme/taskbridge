@@ -19,7 +19,7 @@ func Today(result *controlplane.TodayResult) string {
 		}
 		fprintf(&sb, "%s %s\n", ui.Bold(section.Title), ui.Dim(fmt.Sprintf("(%d)", len(section.Tasks))))
 		if len(section.Tasks) == 0 {
-			fprintf(&sb, "%s\n", ui.Dim("  （无）"))
+			fprintf(&sb, "%s\n", ui.Dim("  (none)"))
 			continue
 		}
 		for _, task := range section.Tasks {
@@ -71,13 +71,13 @@ func TaskList(title string, result *controlplane.ListResult) string {
 
 func Review(result *controlplane.ReviewResult) string {
 	var sb strings.Builder
-	fprintf(&sb, "%s\n\n", ui.Header("任务健康复盘"))
-	fprintf(&sb, "%s\n", ui.Bold("摘要"))
+	fprintf(&sb, "%s\n\n", ui.Header("Task health review"))
+	fprintf(&sb, "%s\n", ui.Bold("Summary"))
 	for k, v := range result.Summary {
 		fprintf(&sb, "  %s  %d\n", ui.Dim(k+":"), v)
 	}
 	if len(result.SuggestedActions) == 0 {
-		fprintf(&sb, "\n%s\n", ui.Dim("暂无建议动作。"))
+		fprintf(&sb, "\n%s\n", ui.Dim("No suggested actions."))
 		return sb.String()
 	}
 	sb.WriteString("\n")
@@ -179,7 +179,7 @@ func estimate(minutes int) string {
 
 func ActionSection(actions []controlplane.SuggestedAction) string {
 	var sb strings.Builder
-	fprintf(&sb, "%s\n", ui.Bold("建议动作"))
+	fprintf(&sb, "%s\n", ui.Bold("Suggested actions"))
 	for _, action := range actions {
 		fprintf(&sb, "  %s %s: %s\n", actionType(action.Type), ui.Dim(action.TaskID), action.Reason)
 	}

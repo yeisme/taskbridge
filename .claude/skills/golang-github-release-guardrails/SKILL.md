@@ -74,7 +74,7 @@ Release workflow 必须满足：
 - 初版门禁要能通过当前代码，优先启用低噪声规则，例如 `govet`、`ineffassign`、`misspell`。
 - 如果项目已有较高质量基础，可以启用 `errcheck`、`staticcheck`、`unused`、`revive`。
 - 若严格规则会引出大量历史问题，不要让首版 CI 变成不可落地的重构项目；先记录专项清理，再逐步打开规则。
-- 禁止无原因的宽泛 `nolint`。局部关闭必须写成 `//nolint:<linter> // 中文原因`。
+- 禁止无原因的宽泛 `nolint`。局部关闭必须写成 `//nolint:<linter> // English reason`。
 
 ## GoReleaser 策略
 

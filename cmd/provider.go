@@ -5,70 +5,70 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-
+	"github.com/yeisme/taskbridge/internal/clioutput"
 	"github.com/yeisme/taskbridge/internal/provider"
 	"github.com/yeisme/taskbridge/pkg/ui"
 )
 
-// providerCmd Provider 管理命令
+// providerCmd Provider management command
 var providerCmd = &cobra.Command{
 	Use:   "provider",
-	Short: "Provider 管理",
-	Long: `管理 Todo Provider。
+	Short: "Provider management",
+	Long: `Manage Todo providers.
 
-子命令:
-  list       列出所有 Provider
-  enable     启用 Provider
-  disable    禁用 Provider
-  configure  配置 Provider
-  test       测试 Provider 连接
+Subcommands:
+  list       List all providers
+  enable     Enable a provider
+  disable    Disable a provider
+  configure  Configure a provider
+  test       Test provider connection
 
-示例:
+Examples:
   taskbridge provider list
   taskbridge provider enable google
   taskbridge provider test google`,
 }
 
-// providerListCmd 列出 Provider
+// providerListCmd lists Providers
 var providerListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "列出所有 Provider",
-	Long:  `列出所有支持的 Provider 及其状态`,
+	Short: "List all Providers",
+	Long:  `List all supported providers and their status`,
 	RunE:  runProviderList,
 }
 
-// providerEnableCmd 启用 Provider
+// providerEnableCmd Enable Provider
 var providerEnableCmd = &cobra.Command{
 	Use:   "enable <provider>",
-	Short: "启用 Provider",
-	Long:  `启用指定的 Provider`,
+	Short: "Enable Provider",
+	Long:  `Enable the specified Provider`,
 	Args:  cobra.ExactArgs(1),
 	RunE:  runProviderEnable,
 }
 
-// providerDisableCmd 禁用 Provider
+// providerDisableCmd Disable Provider
 var providerDisableCmd = &cobra.Command{
 	Use:   "disable <provider>",
-	Short: "禁用 Provider",
-	Long:  `禁用指定的 Provider`,
+	Short: "Disable Provider",
+	Long:  `Disable the specified Provider`,
 	Args:  cobra.ExactArgs(1),
 	RunE:  runProviderDisable,
 }
 
-// providerTestCmd 测试 Provider
+// providerTestCmd Test Provider
 var providerTestCmd = &cobra.Command{
 	Use:   "test <provider>",
-	Short: "测试 Provider 连接",
-	Long:  `测试指定 Provider 的连接和认证状态`,
+	Short: "Test Provider connection",
+	Long:  `Test the selected provider connection and authentication status`,
 	Args:  cobra.ExactArgs(1),
 	RunE:  runProviderTest,
 }
 
-// providerInfoCmd 显示 Provider 信息
+// providerInfoCmd displays Provider information
 var providerInfoCmd = &cobra.Command{
 	Use:   "info <provider>",
-	Short: "显示 Provider 详细信息",
-	Long:  `显示指定 Provider 的详细信息和能力`,
+	Short: "Show provider details",
+	Long:  `Display details and capabilities of the specified Provider`,
 	Args:  cobra.ExactArgs(1),
 	RunE:  runProviderInfo,
 }
@@ -82,7 +82,7 @@ func init() {
 	providerCmd.AddCommand(providerInfoCmd)
 }
 
-// ProviderInfo Provider 信息
+// ProviderInfo Provider information
 type ProviderInfo struct {
 	Name         string
 	ShortName    string
@@ -94,14 +94,14 @@ type ProviderInfo struct {
 	Capabilities []string
 }
 
-// getProviderInfos 获取所有 Provider 信息
+// getProviderInfos gets all Provider information
 func getProviderInfos() map[string]ProviderInfo {
 	return map[string]ProviderInfo{
 		"google": {
 			Name:        "google",
 			ShortName:   "google",
 			DisplayName: "Google Tasks",
-			Description: "Google 任务管理服务",
+			Description: "Google task management service",
 			AuthType:    "OAuth2",
 			Enabled:     cfg.Providers.Google.Enabled,
 		},
@@ -109,15 +109,15 @@ func getProviderInfos() map[string]ProviderInfo {
 			Name:        "microsoft",
 			ShortName:   "ms",
 			DisplayName: "Microsoft To Do",
-			Description: "微软任务管理服务",
+			Description: "Microsoft Task Management Service",
 			AuthType:    "OAuth2",
 			Enabled:     cfg.Providers.Microsoft.Enabled,
 		},
 		"feishu": {
 			Name:        "feishu",
 			ShortName:   "feishu",
-			DisplayName: "飞书任务",
-			Description: "飞书任务管理",
+			DisplayName: "Feishu Tasks",
+			Description: "Feishu task management",
 			AuthType:    "App ID/Secret",
 			Enabled:     cfg.Providers.Feishu.Enabled,
 		},
@@ -125,7 +125,7 @@ func getProviderInfos() map[string]ProviderInfo {
 			Name:        "ticktick",
 			ShortName:   "tick",
 			DisplayName: "TickTick",
-			Description: "TickTick 任务管理",
+			Description: "TickTick task management",
 			AuthType:    "API Token",
 			Enabled:     cfg.Providers.TickTick.Enabled,
 		},
@@ -133,7 +133,7 @@ func getProviderInfos() map[string]ProviderInfo {
 			Name:        "dida",
 			ShortName:   "tick_cn",
 			DisplayName: "Dida365",
-			Description: "滴答清单（国内）",
+			Description: "Tick-tock list (domestic)",
 			AuthType:    "API Token",
 			Enabled:     cfg.Providers.Dida.Enabled,
 		},
@@ -141,255 +141,345 @@ func getProviderInfos() map[string]ProviderInfo {
 			Name:        "todoist",
 			ShortName:   "todo",
 			DisplayName: "Todoist",
-			Description: "Todoist 任务管理",
+			Description: "Todoist task management",
 			AuthType:    "API Token",
 			Enabled:     cfg.Providers.Todoist.Enabled,
 		},
 	}
 }
 
-func runProviderList(_ *cobra.Command, _ []string) error {
+type ProviderListRow struct {
+	Name        string `json:"name"`
+	ShortName   string `json:"short_name"`
+	Status      string `json:"status"`
+	AuthType    string `json:"auth_type"`
+	Description string `json:"description"`
+}
+
+func buildProviderListProjection() clioutput.Projection {
 	providers := getProviderInfos()
-
-	// 使用 lipgloss table 组件
-	table := ui.NewTable("名称", "简写", "状态", "认证方式", "描述")
-
+	rows := make([]ProviderListRow, 0, len(providers))
+	connected := 0
 	for _, name := range provider.GetAllProviderNames() {
 		p := providers[name]
-		// 获取实际认证状态
-		authStatus, _, _ := getProviderStatus(name)
-		var status string
-		switch authStatus {
-		case "✅ Connected":
-			status = ui.StatusConnected
-		case "⚠️ Expired":
-			status = ui.StatusExpired
-		case "❌ Not authenticated":
-			status = ui.Warning("未认证")
-		default:
-			if p.Enabled {
-				status = ui.StatusEnabled
-			} else {
-				status = ui.StatusDisabled
-			}
+		status := providerStatusLabel(name, p)
+		if status == "Connected" {
+			connected++
 		}
-		table.AddRow(p.DisplayName, p.ShortName, status, p.AuthType, p.Description)
+		rows = append(rows, ProviderListRow{p.DisplayName, p.ShortName, status, p.AuthType, p.Description})
 	}
+	projection := clioutput.New("provider.list")
+	projection.Summary = "Providers listed."
+	projection.Facts["count"] = len(rows)
+	projection.Facts["connected"] = connected
+	projection.Data = map[string]any{"providers": rows}
+	return projection
+}
 
-	fmt.Println()
-	fmt.Println(table.Render())
-	fmt.Println()
-	fmt.Println(ui.Dim("提示: 使用 'taskbridge provider info <简写>' 查看详细信息"))
-	fmt.Println()
-	return nil
+func providerStatusLabel(name string, p ProviderInfo) string {
+	snapshot := getProviderAuthSnapshot(name)
+	switch snapshot.StatusText {
+	case "✅ Connected":
+		return "Connected"
+	case "⚠️ Expired":
+		return "Expired"
+	case "❌ Not authenticated":
+		return "Not authenticated"
+	default:
+		if p.Enabled {
+			return "Enabled"
+		}
+		return "Disabled"
+	}
+}
+
+func statusWithIcon(status string) string {
+	switch status {
+	case "Connected":
+		return "✅ Connected"
+	case "Expired":
+		return "⚠️ Expired"
+	case "Not authenticated":
+		return "❌ Not authenticated"
+	case "Enabled":
+		return "🟢 Enabled"
+	case "Disabled":
+		return "⚪ Disabled"
+	case "Not enabled":
+		return "⚪ Not enabled"
+	case "Not configured":
+		return "⚪ Not configured"
+	case "Token error":
+		return "⚠️ Token error"
+	default:
+		return status
+	}
+}
+
+func buildProviderWriteProjection(command, providerName, state string) clioutput.Projection {
+	projection := clioutput.New(command)
+	projection.Summary = fmt.Sprintf("%s Provider %s %s.", providerWriteStatusIcon(state), providerName, state)
+	projection.Facts["provider"] = providerName
+	projection.Facts["state"] = state
+	projection.Data = map[string]any{"provider": providerName, "state": state}
+	switch state {
+	case "enabled":
+		projection.Actions = []clioutput.Action{
+			{Name: "login", Command: "taskbridge auth login " + providerName},
+			{Name: "test", Command: "taskbridge provider test " + providerName},
+		}
+	case "disabled":
+		projection.Actions = []clioutput.Action{{Name: "enable", Command: "taskbridge provider enable " + providerName}}
+	}
+	return projection
+}
+
+func providerWriteStatusIcon(state string) string {
+	switch state {
+	case "enabled":
+		return "✅"
+	case "disabled":
+		return "⚪"
+	default:
+		return "•"
+	}
+}
+
+func renderProviderWriteReceipt(projection clioutput.Projection) string {
+	var b strings.Builder
+	b.WriteString("Status\n")
+	b.WriteString(projection.Summary)
+	b.WriteString("\n\nFacts\n")
+	b.WriteString("- provider: ")
+	b.WriteString(fmt.Sprint(projection.Facts["provider"]))
+	b.WriteString("\n- state: ")
+	b.WriteString(fmt.Sprint(projection.Facts["state"]))
+	b.WriteString("\n")
+	if len(projection.Actions) > 0 {
+		b.WriteString("\nRecommended next steps\n")
+		for _, action := range projection.Actions {
+			if action.Command == "" {
+				continue
+			}
+			b.WriteString("- ")
+			b.WriteString(action.Command)
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+func setProviderEnabled(providerName string, enabled bool) {
+	switch providerName {
+	case "google":
+		cfg.Providers.Google.Enabled = enabled
+	case "microsoft":
+		cfg.Providers.Microsoft.Enabled = enabled
+	case "feishu":
+		cfg.Providers.Feishu.Enabled = enabled
+	case "ticktick":
+		cfg.Providers.TickTick.Enabled = enabled
+	case "dida":
+		cfg.Providers.Dida.Enabled = enabled
+	case "todoist":
+		cfg.Providers.Todoist.Enabled = enabled
+	}
+}
+
+func renderProviderList(projection clioutput.Projection) string {
+	data, _ := projection.Data.(map[string]any)
+	rows, _ := data["providers"].([]ProviderListRow)
+	table := ui.NewTable("Provider", "Alias", "Status", "Auth", "Description")
+	for _, row := range rows {
+		table.AddRow(row.Name, row.ShortName, statusWithIcon(row.Status), row.AuthType, row.Description)
+	}
+	return "\n" + table.Render() + "\n\nHint: use 'taskbridge provider info <alias>' for details.\n"
+}
+
+func runProviderList(_ *cobra.Command, _ []string) error {
+	projection := buildProviderListProjection()
+	return printProjection("text", projection, func() {
+		fmt.Print(renderProviderList(projection))
+	})
 }
 
 func runProviderEnable(_ *cobra.Command, args []string) error {
-	// 解析 Provider 名称（支持简写）
+	//Parse Provider name (supports abbreviation)
 	providerName := provider.ResolveProviderName(args[0])
 
-	// 检查 Provider 是否存在
+	//Check if Provider exists
 	if !provider.IsValidProvider(providerName) {
-		return usageError("未知的 Provider: " + args[0])
+		return usageError("Unknown Provider:" + args[0])
 	}
 
-	// 更新配置
-	switch providerName {
-	case "google":
-		cfg.Providers.Google.Enabled = true
-	case "microsoft":
-		cfg.Providers.Microsoft.Enabled = true
-	case "feishu":
-		cfg.Providers.Feishu.Enabled = true
-	case "ticktick":
-		cfg.Providers.TickTick.Enabled = true
-	case "dida":
-		cfg.Providers.Dida.Enabled = true
-	case "todoist":
-		cfg.Providers.Todoist.Enabled = true
+	setProviderEnabled(providerName, true)
+	projection := buildProviderWriteProjection("provider.enable", providerName, "enabled")
+	if outputJSON || outputAgent || outputEvents || outputExplain {
+		return printProjection("text", projection, nil)
 	}
-
-	fmt.Println(ui.Success("Provider " + providerName + " 已启用"))
-	fmt.Println()
-	fmt.Println(ui.Bold("下一步:"))
-	fmt.Printf("  1. 配置认证: %s\n", ui.Highlight("taskbridge auth login "+providerName))
-	fmt.Printf("  2. 测试连接: %s\n", ui.Highlight("taskbridge provider test "+providerName))
-	fmt.Println()
+	fmt.Print(renderProviderWriteReceipt(projection))
 	return nil
 }
 
 func runProviderDisable(_ *cobra.Command, args []string) error {
-	// 解析 Provider 名称（支持简写）
+	//Parse Provider name (supports abbreviation)
 	providerName := provider.ResolveProviderName(args[0])
 
-	// 检查 Provider 是否存在
+	//Check if Provider exists
 	if !provider.IsValidProvider(providerName) {
-		return usageError("未知的 Provider: " + args[0])
+		return usageError("Unknown Provider:" + args[0])
 	}
 
-	// 更新配置
-	switch providerName {
-	case "google":
-		cfg.Providers.Google.Enabled = false
-	case "microsoft":
-		cfg.Providers.Microsoft.Enabled = false
-	case "feishu":
-		cfg.Providers.Feishu.Enabled = false
-	case "ticktick":
-		cfg.Providers.TickTick.Enabled = false
-	case "dida":
-		cfg.Providers.Dida.Enabled = false
-	case "todoist":
-		cfg.Providers.Todoist.Enabled = false
+	setProviderEnabled(providerName, false)
+	projection := buildProviderWriteProjection("provider.disable", providerName, "disabled")
+	if outputJSON || outputAgent || outputEvents || outputExplain {
+		return printProjection("text", projection, nil)
 	}
-
-	fmt.Println(ui.Success("Provider " + providerName + " 已禁用"))
+	fmt.Print(renderProviderWriteReceipt(projection))
 	return nil
+}
+
+func buildProviderTestProjection(providerName string) clioutput.Projection {
+	providerInfos := getProviderInfos()
+	p := providerInfos[providerName]
+	status := providerStatusLabel(providerName, p)
+	projection := clioutput.New("provider.test")
+	projection.Summary = "Provider connection check completed."
+	projection.Facts["provider"] = providerName
+	projection.Facts["enabled"] = p.Enabled
+	projection.Facts["status"] = status
+	if !p.Enabled {
+		projection.Status = clioutput.StatusPartial
+		projection.Actions = []clioutput.Action{{Name: "enable", Command: "taskbridge provider enable " + providerName}}
+	} else if status != "Connected" {
+		projection.Status = clioutput.StatusPartial
+		projection.Actions = []clioutput.Action{{Name: "login", Command: "taskbridge auth login " + providerName}}
+	}
+	projection.Data = map[string]any{"provider": providerName, "enabled": p.Enabled, "status": status}
+	return projection
+}
+
+func renderProviderTest(projection clioutput.Projection) string {
+	return clioutput.RenderSummary(projection)
 }
 
 func runProviderTest(_ *cobra.Command, args []string) error {
-	// 解析 Provider 名称（支持简写）
 	providerName := provider.ResolveProviderName(args[0])
-
-	// 检查 Provider 是否存在
 	if !provider.IsValidProvider(providerName) {
-		return usageError("未知的 Provider: " + args[0])
+		return usageError("Unknown Provider:" + args[0])
 	}
+	projection := buildProviderTestProjection(providerName)
+	return printProjection("text", projection, func() {
+		fmt.Print(renderProviderTest(projection))
+	})
+}
 
-	// 获取 Provider 定义
+func buildProviderInfoProjection(providerName string) clioutput.Projection {
 	def, _ := provider.GetProviderDefinition(providerName)
-
-	fmt.Println()
-	fmt.Println(ui.Highlight("🔍 测试 Provider: " + def.DisplayName))
-	fmt.Println()
-
-	// 检查是否启用
 	providerInfos := getProviderInfos()
 	p := providerInfos[providerName]
-	if !p.Enabled {
-		fmt.Println(ui.Error("Provider 未启用"))
-		fmt.Printf("   运行 '%s' 启用\n", ui.Highlight("taskbridge provider enable "+providerName))
-		return nil
+	status := "Not enabled"
+	if p.Enabled {
+		status = "Enabled"
 	}
-	fmt.Println(ui.Success("Provider 已启用"))
-
-	// 检查认证状态
-	status, _, _ := getProviderStatus(providerName)
-	switch status {
-	case "✅ Connected":
-		fmt.Println(ui.Success("认证状态: 已连接"))
-	case "⚠️ Expired":
-		fmt.Println(ui.Warning("认证状态: Token 已过期"))
-		fmt.Printf("   运行 '%s' 刷新\n", ui.Highlight("taskbridge auth refresh "+providerName))
-	default:
-		fmt.Println(ui.Error("认证状态: 未认证"))
-		fmt.Printf("   运行 '%s' 进行认证\n", ui.Highlight("taskbridge auth login "+providerName))
+	projection := clioutput.New("provider.info")
+	projection.Summary = def.DisplayName + " provider details."
+	projection.Facts["provider"] = providerName
+	projection.Facts["status"] = status
+	projection.Facts["auth_type"] = p.AuthType
+	projection.Data = map[string]any{
+		"name":         def.Name,
+		"display_name": def.DisplayName,
+		"description":  def.Description,
+		"auth_type":    p.AuthType,
+		"status":       status,
+		"capabilities": getProviderCapabilities(providerName),
 	}
+	return projection
+}
 
-	fmt.Println()
-	return nil
+func renderProviderInfo(projection clioutput.Projection) string {
+	data, _ := projection.Data.(map[string]any)
+	return clioutput.RenderSummary(clioutput.Projection{
+		SpecVersion: clioutput.SpecVersion,
+		Command:     projection.Command,
+		Status:      clioutput.StatusSuccess,
+		Summary:     projection.Summary,
+		Facts: map[string]any{
+			"Provider": data["display_name"],
+			"Status":   statusWithIcon(fmt.Sprint(data["status"])),
+			"Auth":     data["auth_type"],
+		},
+		Actions: []clioutput.Action{{Name: "login", Command: "taskbridge auth login " + fmt.Sprint(projection.Facts["provider"])}},
+	})
 }
 
 func runProviderInfo(cmd *cobra.Command, args []string) error {
-	// 解析 Provider 名称（支持简写）
 	providerName := provider.ResolveProviderName(args[0])
-
-	// 检查 Provider 是否存在
 	if !provider.IsValidProvider(providerName) {
-		return usageError("未知的 Provider: " + args[0])
+		return usageError("Unknown Provider:" + args[0])
 	}
-
-	// 获取 Provider 定义
-	def, _ := provider.GetProviderDefinition(providerName)
-
-	// 获取配置状态
-	providerInfos := getProviderInfos()
-	p := providerInfos[providerName]
-
-	// 获取能力列表
-	capabilities := getProviderCapabilities(providerName)
-
-	// 转换为 CheckItem 格式
-	var checkItems []ui.CheckItem
-	for _, cap := range capabilities {
-		// 检查是否包含"不支持"来判断是否支持该功能
-		isSupported := !strings.Contains(cap, "不支持")
-		checkItems = append(checkItems, ui.CheckItem{
-			Text:    cap,
-			Checked: isSupported,
-		})
-	}
-
-	// 确定状态
-	var status string
-	if p.Enabled {
-		status = "已启用"
-	} else {
-		status = "未启用"
-	}
-
-	// 使用 ProviderCard 组件输出
-	fmt.Println()
-	fmt.Println(ui.ProviderCard(def.Name, def.DisplayName, def.Description, p.AuthType, status, checkItems))
-	fmt.Println()
-	return nil
+	projection := buildProviderInfoProjection(providerName)
+	return printProjection("text", projection, func() {
+		fmt.Print(renderProviderInfo(projection))
+	})
 }
 
 func getProviderCapabilities(providerName string) []string {
 	switch providerName {
 	case "google":
 		return []string{
-			"截止日期",
-			"任务列表",
-			"子任务（有限支持）",
-			"优先级（不支持）",
-			"标签（不支持）",
-			"增量同步（不支持）",
+			"expiration date",
+			"task list",
+			"Subtasks (limited support)",
+			"priority (not supported)",
+			"labels (not supported)",
+			"delta sync (not supported)",
 		}
 	case "microsoft":
 		return []string{
-			"截止日期",
-			"任务列表",
-			"子任务",
-			"优先级",
-			"提醒",
-			"标签（不支持）",
+			"expiration date",
+			"task list",
+			"subtask",
+			"priority",
+			"remind",
+			"labels (not supported)",
 		}
 	case "feishu":
 		return []string{
-			"截止日期",
-			"任务列表",
-			"优先级",
-			"标签",
-			"子任务（有限支持）",
+			"expiration date",
+			"task list",
+			"priority",
+			"Label",
+			"Subtasks (limited support)",
 		}
 	case "ticktick":
 		return []string{
-			"截止日期",
-			"任务列表",
-			"子任务",
-			"优先级",
-			"标签",
-			"提醒",
+			"expiration date",
+			"task list",
+			"subtask",
+			"priority",
+			"Label",
+			"remind",
 		}
 	case "dida":
 		return []string{
-			"截止日期",
-			"任务列表",
-			"子任务",
-			"优先级",
-			"标签",
-			"提醒",
+			"expiration date",
+			"task list",
+			"subtask",
+			"priority",
+			"Label",
+			"remind",
 		}
 	case "todoist":
 		return []string{
-			"截止日期",
-			"项目",
-			"子任务",
-			"优先级",
-			"标签",
+			"expiration date",
+			"project",
+			"subtask",
+			"priority",
+			"Label",
 		}
 	default:
-		return []string{"未知"}
+		return []string{"unknown"}
 	}
 }

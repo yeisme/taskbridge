@@ -126,7 +126,7 @@ func (c *OAuth2Client) ExchangeCode(ctx context.Context, code string) (*TokenRes
 		lark.WithLogLevel(larkcore.LogLevelError),
 	)
 
-	resp, err := client.Authen.V1.OidcAccessToken.Create(
+	resp, err := client.Authen.OidcAccessToken.Create(
 		ctx,
 		larkauthenv1.NewCreateOidcAccessTokenReqBuilder().
 			Body(
@@ -362,7 +362,7 @@ func (c *OAuth2Client) RefreshToken(ctx context.Context) (*TokenResponse, error)
 		lark.WithLogLevel(larkcore.LogLevelError),
 	)
 
-	resp, err := client.Authen.V1.OidcRefreshAccessToken.Create(
+	resp, err := client.Authen.OidcRefreshAccessToken.Create(
 		ctx,
 		larkauthenv1.NewCreateOidcRefreshAccessTokenReqBuilder().
 			Body(
@@ -417,70 +417,6 @@ func (c *OAuth2Client) RefreshToken(ctx context.Context) (*TokenResponse, error)
 	}
 
 	return newToken, nil
-}
-
-// doTokenRequest 执行 token 请求
-func (c *OAuth2Client) doTokenRequest(ctx context.Context, tokenURL string, params map[string]string) (*TokenResponse, error) {
-	// 构建请求体
-	formData := url.Values{}
-	for k, v := range params {
-		formData.Set(k, v)
-	}
-
-	// 创建请求
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(formData.Encode()))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	// 发送请求
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			log.Warn().Err(err).Msg("Failed to close token response body")
-		}
-	}()
-
-	// 读取响应
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	// 检查错误状态码
-	if resp.StatusCode >= 400 {
-		var errResp TokenErrorResponse
-		if err := json.Unmarshal(body, &errResp); err == nil && errResp.Msg != "" {
-			return nil, fmt.Errorf("token error: %d - %s", errResp.Code, errResp.Msg)
-		}
-		return nil, fmt.Errorf("token error: status %d, body: %s", resp.StatusCode, string(body))
-	}
-
-	// 解析响应
-	var tokenResp struct {
-		Code int            `json:"code"`
-		Msg  string         `json:"msg"`
-		Data *TokenResponse `json:"data"`
-	}
-
-	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return nil, fmt.Errorf("failed to parse token response: %w", err)
-	}
-
-	if tokenResp.Code != 0 {
-		return nil, fmt.Errorf("token error: %d - %s", tokenResp.Code, tokenResp.Msg)
-	}
-
-	if tokenResp.Data == nil {
-		return nil, fmt.Errorf("empty token data in response")
-	}
-
-	return tokenResp.Data, nil
 }
 
 // LoadToken 从文件加载 token

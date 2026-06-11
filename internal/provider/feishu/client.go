@@ -289,14 +289,15 @@ func localUpdateToInputTaskAndFields(req *UpdateTaskRequest) (*larktaskv2.InputT
 	}
 
 	// 同步完成状态到 completed_at
-	if req.Status == StatusDone {
+	switch req.Status {
+	case StatusDone:
 		ts := req.CompletedTime
 		if ts == 0 {
 			ts = time.Now().UnixMilli()
 		}
 		input = input.CompletedAt(strconv.FormatInt(ts, 10))
 		fields = append(fields, "completed_at")
-	} else if req.Status == StatusTodo {
+	case StatusTodo:
 		input = input.CompletedAt("0")
 		fields = append(fields, "completed_at")
 	}

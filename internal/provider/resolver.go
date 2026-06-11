@@ -30,8 +30,8 @@ var providerDefinitions = map[string]ProviderDefinition{
 	"feishu": {
 		Name:        "feishu",
 		ShortName:   "feishu",
-		DisplayName: "飞书任务",
-		Description: "飞书任务管理",
+		DisplayName: "Feishu Tasks",
+		Description: "Feishu task management",
 		Aliases:     []string{"feishu"},
 	},
 	"ticktick": {

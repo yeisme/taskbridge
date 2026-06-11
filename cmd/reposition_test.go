@@ -11,7 +11,7 @@ import (
 func TestRootHelpIsCLIFirstAndNoProtocolService(t *testing.T) {
 	output := helpOutput(t, rootCmd)
 	legacyBranding := "TaskBridge" + " " + "M" + "C" + "P"
-	if !strings.Contains(output, "以 CLI 为主的任务工作流工具") {
+	if !strings.Contains(output, "CLI-based task workflow tool") {
 		t.Fatalf("expected CLI-first wording, got: %s", output)
 	}
 	if strings.Contains(output, "\n"+"m"+"cp ") || strings.Contains(output, " "+"m"+"cp ") {
@@ -26,16 +26,12 @@ func TestRootHelpIsCLIFirstAndNoProtocolService(t *testing.T) {
 }
 
 func TestVersionOutputUsesTaskBridgeBranding(t *testing.T) {
-	previous := versionJSON
-	versionJSON = false
-	defer func() { versionJSON = previous }()
-
 	output := captureStdout(t, func() {
-		runVersion(nil, nil)
+		_ = runVersion(nil, nil)
 	})
 	legacyBranding := "TaskBridge" + " " + "M" + "C" + "P"
 
-	if !strings.Contains(output, "TaskBridge - 面向 AI 与多 Todo 平台的 CLI 工作流工具") {
+	if !strings.Contains(output, "TaskBridge - CLI workflow tool for AI and multi-Todo platforms") {
 		t.Fatalf("expected CLI-first version banner, got: %s", output)
 	}
 	if strings.Contains(output, legacyBranding) {

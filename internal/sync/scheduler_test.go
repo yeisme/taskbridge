@@ -81,7 +81,7 @@ func TestSchedulerConfig_IsIntervalMode(t *testing.T) {
 
 func TestScheduler_Start_IntervalMode(t *testing.T) {
 	s := newTestScheduler(SchedulerConfig{Interval: 10 * time.Second})
-	defer s.Stop()
+	defer func() { _ = s.Stop() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -102,23 +102,21 @@ func TestScheduler_Start_MutualExclusion(t *testing.T) {
 		CronExpression: "0 */5 * * * *",
 		Interval:       5 * time.Minute,
 	})
-	defer s.Stop()
+	defer func() { _ = s.Stop() }()
 
 	err := s.Start(context.Background())
 	if err == nil {
 		t.Fatal("expected error for mutual exclusion")
-		s.Stop()
 	}
 }
 
 func TestScheduler_Start_NeitherSet(t *testing.T) {
 	s := newTestScheduler(SchedulerConfig{})
-	defer s.Stop()
+	defer func() { _ = s.Stop() }()
 
 	err := s.Start(context.Background())
 	if err == nil {
 		t.Fatal("expected error when neither cron nor interval set")
-		s.Stop()
 	}
 }
 
@@ -160,7 +158,7 @@ func TestScheduler_Stop_Idempotent(t *testing.T) {
 
 func TestScheduler_Start_CronMode(t *testing.T) {
 	s := newTestScheduler(SchedulerConfig{CronExpression: "0 */5 * * * *"})
-	defer s.Stop()
+	defer func() { _ = s.Stop() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -206,7 +204,7 @@ func TestScheduler_NextRunTime_IntervalMode(t *testing.T) {
 	if err := s.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer s.Stop()
+	defer func() { _ = s.Stop() }()
 
 	next := s.NextRunTime()
 	if next.IsZero() {
@@ -246,7 +244,7 @@ func TestScheduler_NextRunTime_CronMode(t *testing.T) {
 	if err := s.Start(ctx); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer s.Stop()
+	defer func() { _ = s.Stop() }()
 
 	next := s.NextRunTime()
 	if next.IsZero() {
@@ -270,7 +268,7 @@ func TestScheduler_UpdateConfig_CronToInterval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateConfig() failed: %v", err)
 	}
-	defer s.Stop()
+	defer func() { _ = s.Stop() }()
 
 	if !s.IsRunning() {
 		t.Fatal("expected scheduler to still be running after config update")
@@ -294,7 +292,7 @@ func TestScheduler_UpdateConfig_IntervalToCron(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateConfig() failed: %v", err)
 	}
-	defer s.Stop()
+	defer func() { _ = s.Stop() }()
 
 	if !s.IsRunning() {
 		t.Fatal("expected scheduler to still be running after config update")
@@ -306,7 +304,7 @@ func TestScheduler_UpdateConfig_IntervalToCron(t *testing.T) {
 
 func TestScheduler_UpdateConfig_InvalidMutualExclusion(t *testing.T) {
 	s := newTestScheduler(SchedulerConfig{Interval: 10 * time.Second})
-	defer s.Stop()
+	defer func() { _ = s.Stop() }()
 
 	err := s.UpdateConfig(SchedulerConfig{
 		CronExpression: "0 */5 * * * *",
@@ -319,7 +317,7 @@ func TestScheduler_UpdateConfig_InvalidMutualExclusion(t *testing.T) {
 
 func TestScheduler_UpdateConfig_NotRunning(t *testing.T) {
 	s := newTestScheduler(SchedulerConfig{Interval: 10 * time.Second})
-	defer s.Stop()
+	defer func() { _ = s.Stop() }()
 
 	// Update config while not running should succeed
 	err := s.UpdateConfig(SchedulerConfig{Interval: 30 * time.Second})
@@ -335,7 +333,7 @@ func TestScheduler_UpdateConfig_NotRunning(t *testing.T) {
 
 func TestScheduler_DoubleStart(t *testing.T) {
 	s := newTestScheduler(SchedulerConfig{Interval: 10 * time.Second})
-	defer s.Stop()
+	defer func() { _ = s.Stop() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

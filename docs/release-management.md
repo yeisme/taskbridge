@@ -1,6 +1,6 @@
 # TaskBridge 版本与发布流程
 
-当前稳定版本：`v1.0.3`（截至 2026-03-07）
+当前稳定版本：`v1.0.4`（截至 2026-06-11）
 
 ## 目标
 
@@ -27,18 +27,19 @@
 ## 发布前检查
 
 ```bash
-go test ./...
-go build ./...
-goreleaser check
+task test
+task build
+task release:check
+task release:local
 ```
 
 ## 发布步骤
 
 ```bash
 git add .
-git commit -m "release: v1.0.3"
-git tag -a v1.0.3 -m "Release v1.0.3"
+git commit -m "release: v1.0.4"
+git tag -a v1.0.4 -m "Release v1.0.4"
 git push origin main
-git push origin v1.0.3
-goreleaser release --clean
+git push origin v1.0.4
+task release
 ```

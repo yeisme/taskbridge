@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+type ValidationLevel = string
+
 const (
 	ValidationLevelError   = "error"
 	ValidationLevelWarning = "warning"

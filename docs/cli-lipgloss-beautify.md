@@ -1,5 +1,7 @@
 # CLI 输出美化计划
 
+> Status: superseded by OpenSpec change `taskbridge-cli-output-polish` and the shared `internal/clioutput` renderer contract. This document is now a visual reference only. New command output must build a projection once and render human/json/agent/events/explain from that projection; do not hand-write per-command Lipgloss panels as the primary design.
+
 ## 概述
 
 使用 `charmbracelet/lipgloss` 库美化 TaskBridge CLI 的所有命令输出，解决中文字符对齐问题，提升用户体验。
@@ -24,18 +26,28 @@ Microsoft To Do   ms       ❌ 未启用   OAuth2              微软任务管�
 - 缺乏统一的颜色主题
 - 错误、成功、警告消息样式不一致
 
-## 解决方案
+## 当前实现方向
 
-### 1. 创建 UI 样式模块
+视觉组件不再作为项目级输出设计主轴。当前实现采用：
 
-创建 `pkg/ui/` 目录，包含：
+1. `internal/clioutput` 定义 projection、JSON envelope、agent key=value、human summary/stats panel、width/color/redaction helpers。
+2. `pkg/ui` 继续保留底层 table/card/style 组件，供 TUI 和低层 terminal rendering 复用。
+3. 命令层只解析参数、调用服务、构建 projection，然后选择 renderer；不能从 human 文本反推 JSON。
 
-```
-pkg/ui/
-├── styles.go      # lipgloss 样式定义
-├── table.go       # 表格渲染（支持中文宽度）
-├── components.go  # 可复用 UI 组件
-└── icons.go       # 图标和符号定义
+分析类输出示例：
+
+```text
+📊 Prioritization analysis
+
+╭────────────────────────────────────────────╮
+│ 🔴 Urgent (P0)  0  0.0%                    │
+│ 🟠 High (P1)    0  0.0%                    │
+│ 🟡 Medium (P2)  0  0.0%                    │
+│ 🔵 Low (P3)     0  0.0%                    │
+│ ⚪ No priority   0  0.0%                    │
+╰────────────────────────────────────────────╯
+
+Total: 0 tasks | Active: 0 | Completed: 0
 ```
 
 ### 2. 样式定义 (styles.go)
@@ -141,9 +153,9 @@ func StringWidth(s string) int {
 }
 ```
 
-### 4. 需要修改的命令
+### 4. 历史目标命令
 
-#### 4.1 provider list
+以下示例保留为视觉参考；实际迁移顺序和验收以 `openspec/changes/taskbridge-cli-output-polish/` 为准。
 
 **当前输出：**
 
