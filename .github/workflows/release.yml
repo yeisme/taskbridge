@@ -39,7 +39,7 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.2.0
+          version: v2.12.2
           args: --timeout=5m
 
       - name: GoReleaser check
@@ -92,7 +92,7 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.2.0
+          version: v2.12.2
           args: --timeout=5m
 
       - name: GoReleaser check
