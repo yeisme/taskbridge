@@ -24,13 +24,12 @@
 
 ```bash
 taskbridge today
-taskbridge today --mock
-taskbridge today --format json
+taskbridge today --json
 taskbridge today --source microsoft
 taskbridge today --source openspec
 ```
 
-`--mock` 使用内置模拟数据，不读取 Provider token 或真实 task store，适合首次体验和测试。`--source openspec` 在 today 视图中加入 OpenSpec 工程任务信号。
+`--mock` 使用内置模拟数据（保留给测试和兼容路径）；新用户应使用 `taskbridge demo today` 体验控制面。`--source openspec` 在 today 视图中加入 OpenSpec 工程任务信号。
 
 ## 输出模式
 

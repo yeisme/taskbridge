@@ -11,8 +11,8 @@ import (
 func TestRootHelpIsCLIFirstAndNoProtocolService(t *testing.T) {
 	output := helpOutput(t, rootCmd)
 	legacyBranding := "TaskBridge" + " " + "M" + "C" + "P"
-	if !strings.Contains(output, "CLI-based task workflow tool") {
-		t.Fatalf("expected CLI-first wording, got: %s", output)
+	if !strings.Contains(output, "task execution control plane") {
+		t.Fatalf("expected control-plane-first wording, got: %s", output)
 	}
 	if strings.Contains(output, "\n"+"m"+"cp ") || strings.Contains(output, " "+"m"+"cp ") {
 		t.Fatalf("expected protocol command to be removed, got: %s", output)
@@ -31,7 +31,7 @@ func TestVersionOutputUsesTaskBridgeBranding(t *testing.T) {
 	})
 	legacyBranding := "TaskBridge" + " " + "M" + "C" + "P"
 
-	if !strings.Contains(output, "TaskBridge - CLI workflow tool for AI and multi-Todo platforms") {
+	if !strings.Contains(output, "TaskBridge - Local task execution control plane") {
 		t.Fatalf("expected CLI-first version banner, got: %s", output)
 	}
 	if strings.Contains(output, legacyBranding) {

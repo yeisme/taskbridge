@@ -95,6 +95,23 @@ func TestVersionOutput(t *testing.T) {
 	}
 }
 
+// TestRootVersionFlag verifies release smoke can use the conventional --version flag.
+func TestRootVersionFlag(t *testing.T) {
+	cfg = &config.Config{}
+
+	var stdout bytes.Buffer
+	cmd := testCmd()
+	cmd.SetOut(&stdout)
+	cmd.SetArgs([]string{"--version"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute --version: %v", err)
+	}
+
+	if stdout.String() == "" {
+		t.Fatal("--version produced no output")
+	}
+}
+
 // TestVersionJSONOutput verifies version --json produces valid JSON.
 func TestVersionJSONOutput(t *testing.T) {
 	cfg = &config.Config{}

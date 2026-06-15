@@ -22,7 +22,7 @@ Example:
 
 func buildVersionProjection() clioutput.Projection {
 	p := clioutput.New("version.show")
-	p.Summary = "TaskBridge - CLI workflow tool for AI and multi-Todo platforms"
+	p.Summary = "TaskBridge - Local task execution control plane"
 	p.Facts["version"] = buildinfo.Version
 	p.Facts["git_commit"] = buildinfo.GitCommit
 	p.Facts["build_date"] = buildinfo.BuildDate

@@ -19,8 +19,8 @@
 | 每日控制面 | [`taskbridge next`](./next.md) | 获取当前最值得推进的下一步。 |
 | 每日控制面 | [`taskbridge inbox`](./inbox.md) | 查看无归属、缺日期或待整理任务。 |
 | 每日控制面 | [`taskbridge review`](./review.md) | 做任务健康复盘，生成建议动作，不默认写入。 |
+| 新手入口 | [`taskbridge demo`](./demo.md) | 无需 Provider 认证，用 demo 数据体验控制面能力。 |
 | 新手入口 | [`taskbridge doctor`](./doctor.md) | 检查本地环境、存储和 Provider 认证状态。 |
-| 新手入口 | [`taskbridge quickstart`](./quickstart.md) | 根据当前状态输出一条推荐下一步。 |
 | 任务浏览 | [`taskbridge list`](./list.md) | 按筛选条件列出任务。 |
 | 任务浏览 | [`taskbridge lists`](./lists.md) | 列出任务清单和任务数量。 |
 | 本地任务 | [`taskbridge task`](./task.md) | 管理本地任务 CRUD 和完成状态。 |
@@ -41,7 +41,7 @@
 
 | 目标 | 推荐入口 |
 | --- | --- |
-| 首次体验 | `taskbridge doctor` -> `taskbridge quickstart` -> `taskbridge today --mock` |
+| 首次体验 | `taskbridge doctor` -> `taskbridge quickstart` -> `taskbridge demo today` |
 | 日常开始工作 | `taskbridge today` -> `taskbridge next` |
 | 处理风险 | `taskbridge review` |
 | 查看 OpenSpec 工程信号 | `taskbridge today` 或 `taskbridge next --source openspec`；详细操作继续用原生 `openspec ...`。 |

@@ -27,6 +27,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Set up Task
+        uses: go-task/setup-task@v1
+
       - name: Download modules
         run: go mod download
 
@@ -34,7 +37,7 @@ jobs:
         run: go mod verify
 
       - name: Test
-        run: go test ./...
+        run: task test
 
       - name: Lint
         uses: golangci/golangci-lint-action@v8
@@ -56,6 +59,23 @@ jobs:
           version: v2.12.6
           args: release --snapshot --clean --skip=publish
 
+      - name: Snapshot binary smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="$(find dist -type f -name taskbridge -perm -111 | sort | head -n 1)"
+          if [ -z "$binary" ]; then
+            binary="$(find dist -type f -name taskbridge | sort | head -n 1)"
+          fi
+          if [ -z "$binary" ]; then
+            echo "No taskbridge binary found under dist after snapshot build" >&2
+            exit 1
+          fi
+          chmod +x "$binary"
+          "$binary" --version
+          "$binary" --help
+          "$binary" demo today
+
   release:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -75,6 +95,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Set up Task
+        uses: go-task/setup-task@v1
+
       - name: Download modules
         run: go mod download
 
@@ -87,13 +110,101 @@ jobs:
           git diff --exit-code -- go.mod go.sum
 
       - name: Test
-        run: go test ./...
+        run: task test
+
+      - name: Integration test
+        run: task test:integration
 
       - name: Lint
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.12.2
           args: --timeout=5m
+
+      - name: GoReleaser check
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: v2.12.6
+          args: check
+
+      - name: Build release binary for smoke
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: v2.12.6
+          args: build --clean --single-target
+
+      - name: Release binary smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="$(find dist -type f -name taskbridge -perm -111 | sort | head -n 1)"
+          if [ -z "$binary" ]; then
+            binary="$(find dist -type f -name taskbridge | sort | head -n 1)"
+          fi
+          if [ -z "$binary" ]; then
+            echo "No taskbridge binary found under dist after release build" >&2
+            exit 1
+          fi
+          chmod +x "$binary"
+          "$binary" --version
+          "$binary" --help
+          "$binary" demo today
+
+      - name: Check package publisher GitHub App credentials
+        id: publisher-app-credentials
+        shell: bash
+        env:
+          RELEASE_APP_CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "$RELEASE_APP_CLIENT_ID" ] && [ -n "$RELEASE_APP_PRIVATE_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$RELEASE_APP_CLIENT_ID" ] || [ -n "$RELEASE_APP_PRIVATE_KEY" ]; then
+            echo "available=partial" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create package publisher GitHub App token
+        id: publisher-app-token
+        if: ${{ steps.publisher-app-credentials.outputs.available == 'true' }}
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: yeisme
+          repositories: |
+            homebrew-tap
+            scoop-bucket
+          permission-contents: write
+
+      - name: Resolve package publisher token
+        id: publisher-token
+        shell: bash
+        env:
+          APP_TOKEN: ${{ steps.publisher-app-token.outputs.token }}
+          FALLBACK_TOKEN: ${{ secrets.PUBLISHER_TOKEN }}
+        run: |
+          set -euo pipefail
+          app_credentials="${{ steps.publisher-app-credentials.outputs.available }}"
+          if [ -n "$APP_TOKEN" ]; then
+            echo "Using GitHub App token scoped to yeisme/homebrew-tap and yeisme/scoop-bucket."
+            echo "::add-mask::$APP_TOKEN"
+            echo "token=$APP_TOKEN" >> "$GITHUB_OUTPUT"
+          elif [ "$app_credentials" = "partial" ]; then
+            echo "GitHub App publisher credentials are partially configured but no token was created." >&2
+            exit 1
+          elif [ -n "$FALLBACK_TOKEN" ]; then
+            echo "::warning::Using secrets.PUBLISHER_TOKEN as a temporary package-index fallback. Configure RELEASE_APP_CLIENT_ID and RELEASE_APP_PRIVATE_KEY for the primary short-lived GitHub App token path."
+            echo "::add-mask::$FALLBACK_TOKEN"
+            echo "token=$FALLBACK_TOKEN" >> "$GITHUB_OUTPUT"
+          else
+            echo "No package publisher token is available. Configure RELEASE_APP_CLIENT_ID/RELEASE_APP_PRIVATE_KEY for the GitHub App path, or secrets.PUBLISHER_TOKEN as a documented temporary fallback." >&2
+            exit 1
+          fi
 
       - name: Publish release
         uses: goreleaser/goreleaser-action@v6
@@ -102,5 +213,5 @@ jobs:
           version: v2.12.6
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.PUBLISHER_TOKEN }}
-          PUBLISHER_TOKEN: ${{ secrets.PUBLISHER_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISHER_TOKEN: ${{ steps.publisher-token.outputs.token }}

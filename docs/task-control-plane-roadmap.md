@@ -1,6 +1,6 @@
 # TaskBridge 任务控制面四阶段路线设计
 
-更新时间：2026-04-30
+更新时间：2026-06-15
 
 ## 1. 核心判断
 
@@ -21,6 +21,8 @@ TaskBridge 的下一步不是继续横向堆 Todo Provider，也不是先追求�
 一句话定位：
 
 > TaskBridge 是人和 AI 共用的本地任务驾驶舱：先帮用户看清今天，再安全地把决策写回各 Todo 平台。
+
+> **2026-06-15 update**: The `taskbridge-control-plane-hardening` change implements Phase 0/1/2/4 hardening only: demo today entry, doctor next action, today/next/review output contract, action audit receipts, agent contract (capabilities, schemas, exit codes, docs), and integration evidence. It does NOT add MCP adapter, bidirectional sync auto-resolve, or new Providers (Apple Reminders, OmniFocus). Those are deferred to separate changes.
 
 ## 2. 北极星指标
 

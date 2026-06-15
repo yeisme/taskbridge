@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/yeisme/taskbridge/internal/analyze"
 	"github.com/yeisme/taskbridge/internal/clioutput"
 
 	"github.com/yeisme/taskbridge/internal/model"
@@ -97,6 +98,51 @@ func init() {
 	}
 }
 
+// Type aliases for the analyze package DTOs.
+// The cmd layer uses these aliases for renderer compatibility while
+// delegating computation to internal/analyze.
+type (
+	QuadrantAnalysis = analyze.QuadrantAnalysis
+	QuadrantData     = analyze.QuadrantData
+	PriorityAnalysis = analyze.PriorityAnalysis
+	PriorityData     = analyze.PriorityData
+	TimeAnalysis     = analyze.TimeAnalysis
+	TimeData         = analyze.TimeData
+	SummaryData      = analyze.SummaryData
+)
+
+// TrendAnalysis trend analysis results (cmd-specific JSON contract)
+type TrendAnalysis struct {
+	DailyCompletions []DayData `json:"daily_completions"`
+	WeeklyAverage    float64   `json:"weekly_average"`
+	TotalCompleted   int       `json:"total_completed"`
+}
+
+// DayData daily data
+type DayData struct {
+	Date      string `json:"date"`
+	Completed int    `json:"completed"`
+}
+
+// AnalyzeReport comprehensive report (cmd-specific JSON contract with flat fields)
+type AnalyzeReport struct {
+	Total      int    `json:"total"`
+	Active     int    `json:"active"`
+	Completed  int    `json:"completed"`
+	Q1         int    `json:"q1"`
+	Q2         int    `json:"q2"`
+	Q3         int    `json:"q3"`
+	Q4         int    `json:"q4"`
+	Urgent     int    `json:"urgent"`
+	High       int    `json:"high"`
+	Medium     int    `json:"medium"`
+	Low        int    `json:"low"`
+	Overdue    int    `json:"overdue"`
+	TodayTasks int    `json:"today_tasks"`
+	ThisWeek   int    `json:"this_week"`
+	Generated  string `json:"generated"`
+}
+
 // getTasksForAnalysis Gets the tasks used for analysis
 func getTasksForAnalysis() ([]model.Task, error) {
 	ctx := context.Background()
@@ -122,24 +168,6 @@ func printAnalyzeJSON(v interface{}) error {
 	}
 	fmt.Println(string(data))
 	return nil
-}
-
-// QuadrantAnalysis four-quadrant analysis results
-type QuadrantAnalysis struct {
-	Q1      QuadrantData `json:"q1"`
-	Q2      QuadrantData `json:"q2"`
-	Q3      QuadrantData `json:"q3"`
-	Q4      QuadrantData `json:"q4"`
-	Summary SummaryData  `json:"summary,omitempty"`
-}
-
-// QuadrantData quadrant data
-type QuadrantData struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Count       int      `json:"count"`
-	Percentage  float64  `json:"percentage"`
-	Tasks       []string `json:"tasks,omitempty"`
 }
 
 func buildAnalyzeProjection(command, summary string, data any) clioutput.Projection {
@@ -196,90 +224,12 @@ func runAnalyzeQuadrant(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	analysis := QuadrantAnalysis{
-		Q1: QuadrantData{
-			Name:        "Q1 Urgent and important",
-			Description: "Do immediately",
-			Tasks:       []string{},
-		},
-		Q2: QuadrantData{
-			Name:        "Q2 Important not urgent",
-			Description: "Schedule and protect time",
-			Tasks:       []string{},
-		},
-		Q3: QuadrantData{
-			Name:        "Q3 Urgent not important",
-			Description: "Delegate or reduce",
-			Tasks:       []string{},
-		},
-		Q4: QuadrantData{
-			Name:        "Q4 Not urgent or important",
-			Description: "Delete or defer",
-			Tasks:       []string{},
-		},
-	}
-
-	total := len(tasks)
-	for _, t := range tasks {
-		if t.Status == model.StatusCompleted {
-			continue
-		}
-		switch t.Quadrant {
-		case model.QuadrantUrgentImportant:
-			analysis.Q1.Count++
-			analysis.Q1.Tasks = append(analysis.Q1.Tasks, t.Title)
-		case model.QuadrantNotUrgentImportant:
-			analysis.Q2.Count++
-			analysis.Q2.Tasks = append(analysis.Q2.Tasks, t.Title)
-		case model.QuadrantUrgentNotImportant:
-			analysis.Q3.Count++
-			analysis.Q3.Tasks = append(analysis.Q3.Tasks, t.Title)
-		case model.QuadrantNotUrgentNotImportant:
-			analysis.Q4.Count++
-			analysis.Q4.Tasks = append(analysis.Q4.Tasks, t.Title)
-		}
-	}
-
-	//Calculate percentage
-	activeTotal := analysis.Q1.Count + analysis.Q2.Count + analysis.Q3.Count + analysis.Q4.Count
-	if activeTotal > 0 {
-		analysis.Q1.Percentage = float64(analysis.Q1.Count) / float64(activeTotal) * 100
-		analysis.Q2.Percentage = float64(analysis.Q2.Count) / float64(activeTotal) * 100
-		analysis.Q3.Percentage = float64(analysis.Q3.Count) / float64(activeTotal) * 100
-		analysis.Q4.Percentage = float64(analysis.Q4.Count) / float64(activeTotal) * 100
-	}
-
-	analysis.Summary = SummaryData{Total: total, Active: activeTotal, Completed: total - activeTotal}
+	analysis := analyze.CalculateQuadrant(tasks)
 
 	projection := buildAnalyzeProjection("analyze.quadrant", "Quadrant analysis completed.", analysis)
 	return printProjectionWithLegacyJSON(analyzeFormat, analysis, projection, func() {
 		fmt.Print(renderQuadrantAnalysis(analysis))
 	})
-}
-
-// PriorityAnalysis Prioritization analysis results
-type PriorityAnalysis struct {
-	Urgent  PriorityData `json:"urgent"`
-	High    PriorityData `json:"high"`
-	Medium  PriorityData `json:"medium"`
-	Low     PriorityData `json:"low"`
-	None    PriorityData `json:"none"`
-	Summary SummaryData  `json:"summary"`
-}
-
-// PriorityData priority data
-type PriorityData struct {
-	Count      int      `json:"count"`
-	Percentage float64  `json:"percentage"`
-	Tasks      []string `json:"tasks,omitempty"`
-}
-
-// SummaryData summary data
-type SummaryData struct {
-	Total            int     `json:"total"`
-	Active           int     `json:"active"`
-	Completed        int     `json:"completed"`
-	AvgPriorityScore float64 `json:"avg_priority_score"`
 }
 
 func renderPriorityAnalysis(analysis PriorityAnalysis) string {
@@ -302,85 +252,12 @@ func runAnalyzePriority(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	analysis := PriorityAnalysis{
-		Urgent: PriorityData{Tasks: []string{}},
-		High:   PriorityData{Tasks: []string{}},
-		Medium: PriorityData{Tasks: []string{}},
-		Low:    PriorityData{Tasks: []string{}},
-		None:   PriorityData{Tasks: []string{}},
-	}
-
-	var totalScore int
-	var scoreCount int
-
-	for _, t := range tasks {
-		if t.Status == model.StatusCompleted {
-			analysis.Summary.Completed++
-			continue
-		}
-		analysis.Summary.Active++
-
-		switch t.Priority {
-		case model.PriorityUrgent:
-			analysis.Urgent.Count++
-			analysis.Urgent.Tasks = append(analysis.Urgent.Tasks, t.Title)
-		case model.PriorityHigh:
-			analysis.High.Count++
-			analysis.High.Tasks = append(analysis.High.Tasks, t.Title)
-		case model.PriorityMedium:
-			analysis.Medium.Count++
-			analysis.Medium.Tasks = append(analysis.Medium.Tasks, t.Title)
-		case model.PriorityLow:
-			analysis.Low.Count++
-			analysis.Low.Tasks = append(analysis.Low.Tasks, t.Title)
-		default:
-			analysis.None.Count++
-			analysis.None.Tasks = append(analysis.None.Tasks, t.Title)
-		}
-
-		if t.PriorityScore > 0 {
-			totalScore += t.PriorityScore
-			scoreCount++
-		}
-	}
-
-	analysis.Summary.Total = len(tasks)
-	if scoreCount > 0 {
-		analysis.Summary.AvgPriorityScore = float64(totalScore) / float64(scoreCount)
-	}
-
-	//Calculate percentage
-	if analysis.Summary.Active > 0 {
-		analysis.Urgent.Percentage = float64(analysis.Urgent.Count) / float64(analysis.Summary.Active) * 100
-		analysis.High.Percentage = float64(analysis.High.Count) / float64(analysis.Summary.Active) * 100
-		analysis.Medium.Percentage = float64(analysis.Medium.Count) / float64(analysis.Summary.Active) * 100
-		analysis.Low.Percentage = float64(analysis.Low.Count) / float64(analysis.Summary.Active) * 100
-		analysis.None.Percentage = float64(analysis.None.Count) / float64(analysis.Summary.Active) * 100
-	}
+	analysis := analyze.CalculatePriority(tasks)
 
 	projection := buildAnalyzeProjection("analyze.priority", "Priority analysis completed.", analysis)
 	return printProjectionWithLegacyJSON(analyzeFormat, analysis, projection, func() {
 		fmt.Print(renderPriorityAnalysis(analysis))
 	})
-}
-
-// TimeAnalysis time analysis results
-type TimeAnalysis struct {
-	Overdue   TimeData `json:"overdue"`
-	Today     TimeData `json:"today"`
-	Tomorrow  TimeData `json:"tomorrow"`
-	ThisWeek  TimeData `json:"this_week"`
-	NextWeek  TimeData `json:"next_week"`
-	ThisMonth TimeData `json:"this_month"`
-	Future    TimeData `json:"future"`
-	NoDueDate TimeData `json:"no_due_date"`
-}
-
-// TimeData time data
-type TimeData struct {
-	Description string   `json:"description"`
-	Count       int      `json:"count"`
-	Tasks       []string `json:"tasks,omitempty"`
 }
 
 func renderTimeAnalysis(analysis TimeAnalysis) string {
@@ -405,79 +282,12 @@ func runAnalyzeTime(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	tomorrow := today.AddDate(0, 0, 1)
-	thisWeekEnd := today.AddDate(0, 0, 7-int(today.Weekday()))
-	nextWeekEnd := thisWeekEnd.AddDate(0, 0, 7)
-	thisMonthEnd := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, now.Location()).Add(-time.Second)
-
-	analysis := TimeAnalysis{
-		Overdue:   TimeData{Description: "overdue", Tasks: []string{}},
-		Today:     TimeData{Description: "today", Tasks: []string{}},
-		Tomorrow:  TimeData{Description: "tomorrow", Tasks: []string{}},
-		ThisWeek:  TimeData{Description: "this week", Tasks: []string{}},
-		NextWeek:  TimeData{Description: "next week", Tasks: []string{}},
-		ThisMonth: TimeData{Description: "this month", Tasks: []string{}},
-		Future:    TimeData{Description: "future", Tasks: []string{}},
-		NoDueDate: TimeData{Description: "no due date", Tasks: []string{}},
-	}
-
-	for _, t := range tasks {
-		if t.Status == model.StatusCompleted {
-			continue
-		}
-
-		if t.DueDate == nil {
-			analysis.NoDueDate.Count++
-			analysis.NoDueDate.Tasks = append(analysis.NoDueDate.Tasks, t.Title)
-			continue
-		}
-
-		due := time.Date(t.DueDate.Year(), t.DueDate.Month(), t.DueDate.Day(), 0, 0, 0, 0, t.DueDate.Location())
-
-		switch {
-		case due.Before(today):
-			analysis.Overdue.Count++
-			analysis.Overdue.Tasks = append(analysis.Overdue.Tasks, t.Title)
-		case due.Equal(today):
-			analysis.Today.Count++
-			analysis.Today.Tasks = append(analysis.Today.Tasks, t.Title)
-		case due.Equal(tomorrow):
-			analysis.Tomorrow.Count++
-			analysis.Tomorrow.Tasks = append(analysis.Tomorrow.Tasks, t.Title)
-		case due.Before(thisWeekEnd) || due.Equal(thisWeekEnd):
-			analysis.ThisWeek.Count++
-			analysis.ThisWeek.Tasks = append(analysis.ThisWeek.Tasks, t.Title)
-		case due.Before(nextWeekEnd) || due.Equal(nextWeekEnd):
-			analysis.NextWeek.Count++
-			analysis.NextWeek.Tasks = append(analysis.NextWeek.Tasks, t.Title)
-		case due.Before(thisMonthEnd) || due.Equal(thisMonthEnd):
-			analysis.ThisMonth.Count++
-			analysis.ThisMonth.Tasks = append(analysis.ThisMonth.Tasks, t.Title)
-		default:
-			analysis.Future.Count++
-			analysis.Future.Tasks = append(analysis.Future.Tasks, t.Title)
-		}
-	}
+	analysis := analyze.CalculateTime(tasks)
 
 	projection := buildAnalyzeProjection("analyze.time", "Time analysis completed.", analysis)
 	return printProjectionWithLegacyJSON(analyzeFormat, analysis, projection, func() {
 		fmt.Print(renderTimeAnalysis(analysis))
 	})
-}
-
-// TrendAnalysis trend analysis results
-type TrendAnalysis struct {
-	DailyCompletions []DayData `json:"daily_completions"`
-	WeeklyAverage    float64   `json:"weekly_average"`
-	TotalCompleted   int       `json:"total_completed"`
-}
-
-// DayData daily data
-type DayData struct {
-	Date      string `json:"date"`
-	Completed int    `json:"completed"`
 }
 
 func renderTrendAnalysis(analysis TrendAnalysis) string {
@@ -550,24 +360,6 @@ func runAnalyzeTrend(cmd *cobra.Command, args []string) error {
 	return printProjectionWithLegacyJSON(analyzeFormat, analysis, projection, func() {
 		fmt.Print(renderTrendAnalysis(analysis))
 	})
-}
-
-type AnalyzeReport struct {
-	Total      int    `json:"total"`
-	Active     int    `json:"active"`
-	Completed  int    `json:"completed"`
-	Q1         int    `json:"q1"`
-	Q2         int    `json:"q2"`
-	Q3         int    `json:"q3"`
-	Q4         int    `json:"q4"`
-	Urgent     int    `json:"urgent"`
-	High       int    `json:"high"`
-	Medium     int    `json:"medium"`
-	Low        int    `json:"low"`
-	Overdue    int    `json:"overdue"`
-	TodayTasks int    `json:"today_tasks"`
-	ThisWeek   int    `json:"this_week"`
-	Generated  string `json:"generated"`
 }
 
 func renderAnalyzeReport(report AnalyzeReport) string {

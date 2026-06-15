@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/yeisme/taskbridge/internal/actionaudit"
 	"github.com/yeisme/taskbridge/internal/actionfile"
 	"github.com/yeisme/taskbridge/internal/agentcontract"
 	"github.com/yeisme/taskbridge/internal/controlplane"
@@ -81,11 +82,60 @@ func init() {
 
 func runAgentCapabilities(_ *cobra.Command, _ []string) error {
 	payload := map[string]interface{}{
-		"schema":            "taskbridge.agent-capabilities.v1",
-		"providers":         getAuthProviderOrder(),
-		"commands":          []string{"agent today", "agent plan", "agent execute", "agent schemas", "today", "next", "review", "sync diff"},
-		"schema_versions":   []string{"taskbridge.agent-result.v1", "taskbridge.today.v1", "taskbridge.actions.v1"},
-		"dangerous_actions": []string{"delete_task", "complete_task", "defer_task", "reschedule_task", "remote_write", "conflict_discard"},
+		"schema":    "taskbridge.agent-capabilities.v1",
+		"version":   "1.0",
+		"providers": getAuthProviderOrder(),
+		"commands": []string{
+			"agent today",
+			"agent plan",
+			"agent execute",
+			"agent schemas",
+			"agent capabilities",
+			"demo today",
+			"today",
+			"next",
+			"review",
+			"audit show",
+			"audit list",
+			"sync diff",
+		},
+		"schema_versions": []string{
+			"taskbridge.agent-result.v1",
+			"taskbridge.agent-capabilities.v1",
+			"taskbridge.today.v1",
+			"taskbridge.actions.v1",
+			"taskbridge.action-result.v1",
+			"taskbridge.action-audit.v1",
+			"taskbridge.sync-session.v1",
+			"taskbridge.project-review.v1",
+		},
+		"dangerous_actions": []string{
+			"delete_task",
+			"complete_task",
+			"defer_task",
+			"reschedule_task",
+			"conflict_discard",
+		},
+		"audit": map[string]interface{}{
+			"supported":        true,
+			"receipt_schema":   "taskbridge.action-audit.v1",
+			"read_commands":    []string{"taskbridge audit show <session-id>", "taskbridge audit list"},
+			"write_triggers":   []string{"review --apply-file --confirm", "agent execute --confirm"},
+			"dry_run_no_write": true,
+		},
+		"output_behavior": map[string]interface{}{
+			"json_envelope":     "taskbridge.agent-result.v1 on stdout",
+			"agent_keyvalue":    "--agent produces stable key=value on stdout",
+			"error_exit_code":   "non-zero on failure",
+			"stdout_json":       "stdout is valid JSON even on error paths",
+			"stderr_diagnostic": "human-readable diagnostics only, no tokens or payloads",
+		},
+		"confirmation": map[string]interface{}{
+			"required_for":    []string{"complete_task", "delete_task", "defer_task", "reschedule_task"},
+			"dry_run_safe":    true,
+			"no_silent_write": true,
+		},
+		"not_implemented": []string{"mcp_adapter", "remote_provider_write", "bidirectional_sync_auto_resolve"},
 	}
 	return printAgent(agentcontract.OK(requestID(), false, payload))
 }
@@ -161,27 +211,98 @@ func runAgentExecute(_ *cobra.Command, _ []string) error {
 	}
 	defer cleanup()
 	effectiveDryRun := effectiveAgentExecuteDryRun(agentDryRun, agentConfirm)
+
+	sessionID := requestID()
+	receipt := actionaudit.Start(sessionID, "agent execute", agentActionFile, effectiveDryRun, agentConfirm)
+
 	result := actionfile.Executor{TaskStore: taskStore}.Execute(context.Background(), file, actionfile.ExecuteOptions{DryRun: effectiveDryRun, Confirm: agentConfirm})
-	envelope := agentcontract.OK(requestID(), effectiveDryRun, result)
+
+	// Build and save audit receipt
+	status := result.Status
+	if result.RequiresConfirmation && status == "ok" {
+		status = "requires_confirmation"
+	}
+	operations := buildAuditOperations(file, result, effectiveDryRun, agentConfirm)
+	stats := actionaudit.Stats{
+		Total:     result.Total,
+		Updated:   result.Updated,
+		Skipped:   result.Skipped,
+		Errors:    len(result.Errors),
+		Confirmed: result.Updated,
+	}
+	receipt.Finish(status, stats, operations, result.Errors)
+	if storeErr := actionaudit.NewStore(cfg.Storage.Path).Save(receipt); storeErr != nil {
+		result.Errors = append(result.Errors, "audit receipt write failed: "+storeErr.Error())
+	}
+
+	envelope := agentcontract.OK(sessionID, effectiveDryRun, result)
 	if result.RequiresConfirmation {
-		envelope = agentcontract.Confirmation(requestID(), effectiveDryRun, result)
+		envelope = agentcontract.Confirmation(sessionID, effectiveDryRun, result)
 	}
 	if result.Status == "error" {
 		envelope.Status = "error"
 	}
-	return printAgent(envelope)
+	// Include receipt id in result for agent visibility
+	if envelope.Result != nil {
+		if data, ok := envelope.Result.(map[string]interface{}); ok {
+			data["audit_receipt_id"] = sessionID
+		}
+	}
+	printErr := printAgent(envelope)
+	if printErr != nil {
+		return printErr
+	}
+	// Agent contract: stdout has valid JSON, failure returns non-zero exit code.
+	if result.Status == "error" {
+		return &CLIError{Message: "agent execute completed with errors", ExitCode: 1}
+	}
+	return nil
 }
 
 func runAgentSchemas(_ *cobra.Command, _ []string) error {
 	payload := map[string]interface{}{
-		"schemas": []string{
-			"taskbridge.agent-result.v1",
-			"taskbridge.agent-capabilities.v1",
-			"taskbridge.today.v1",
-			"taskbridge.actions.v1",
-			"taskbridge.action-result.v1",
-			"taskbridge.sync-session.v1",
-			"taskbridge.project-review.v1",
+		"schema": "taskbridge.agent-schema-index.v1",
+		"schemas": []map[string]interface{}{
+			{
+				"name":        "taskbridge.agent-result.v1",
+				"description": "Agent command result envelope. Fields: schema, status, request_id, dry_run, requires_confirmation, result, warnings, errors. stdout is always valid JSON even on error.",
+				"commands":    []string{"agent today", "agent plan", "agent execute", "agent schemas", "agent capabilities"},
+			},
+			{
+				"name":        "taskbridge.agent-capabilities.v1",
+				"description": "Agent capability declaration. Lists implemented commands, dangerous actions, schema versions, audit support, output behavior, and confirmation rules. Does not claim MCP or remote write.",
+				"commands":    []string{"agent capabilities"},
+			},
+			{
+				"name":        "taskbridge.today.v1",
+				"description": "Daily workbench data model. Sections: must_do, at_risk, suggested_next, project_next. Summary counts per section.",
+				"commands":    []string{"today", "demo today", "next"},
+			},
+			{
+				"name":        "taskbridge.actions.v1",
+				"description": "Action file input schema. Fields: schema, source, created_at, actions[]. Action types: defer_task, reschedule_task, complete_task, split_task.",
+				"commands":    []string{"review --apply-file", "agent execute"},
+			},
+			{
+				"name":        "taskbridge.action-result.v1",
+				"description": "Action file execution result. Fields: schema, status, dry_run, requires_confirmation, total, updated, skipped, errors.",
+				"commands":    []string{"review --apply-file", "agent execute"},
+			},
+			{
+				"name":        "taskbridge.action-audit.v1",
+				"description": "Audit receipt for action execution attempts. Fields: schema_version, session_id, command, action_file, dry_run, confirm, status, started_at, finished_at, duration_ms, stats, operations, errors, redaction. Written by review --apply-file and agent execute.",
+				"commands":    []string{"audit show", "audit list"},
+			},
+			{
+				"name":        "taskbridge.sync-session.v1",
+				"description": "Sync session audit record. Fields: schema, id, mode, source, target, dry_run, started_at, completed_at, status, stats, operations.",
+				"commands":    []string{"sync diff", "sync audit"},
+			},
+			{
+				"name":        "taskbridge.project-review.v1",
+				"description": "Project review result. Fields: schema, project_id, status, suggested_actions[], risks[].",
+				"commands":    []string{"project review"},
+			},
 		},
 	}
 	return printAgent(agentcontract.OK(requestID(), false, payload))
@@ -208,4 +329,53 @@ func requestID() string {
 		return agentRequestID
 	}
 	return fmt.Sprintf("req_%s", time.Now().Format("20060102_150405"))
+}
+
+// buildAuditOperations converts action file actions and execution result into
+// audit receipt operations. Each action maps to one operation entry.
+func buildAuditOperations(file *actionfile.File, result actionfile.ExecuteResult, dryRun, confirm bool) []actionaudit.Operation {
+	if file == nil {
+		return nil
+	}
+	operations := make([]actionaudit.Operation, 0, len(file.Actions))
+
+	// Build error lookup by action index — errors in result.Errors are appended
+	// in action order, but we cannot perfectly map them. We record stats-level
+	// info and mark each action's status based on whether it was dangerous/unconfirmed.
+	errorCount := len(result.Errors)
+	processedCount := 0
+
+	for _, action := range file.Actions {
+		op := actionaudit.Operation{
+			ActionID:  action.ID,
+			Type:      action.Type,
+			TaskID:    action.TaskID,
+			ProjectID: action.ProjectID,
+			Reason:    action.Reason,
+			DryRun:    dryRun,
+			Confirmed: confirm,
+		}
+
+		// Determine status based on execution result
+		if action.RequiresConfirmation && !dryRun && !confirm {
+			op.Status = "skipped_requires_confirmation"
+		} else if dryRun {
+			op.Status = "previewed"
+		} else if confirm {
+			op.Status = "applied"
+		} else {
+			op.Status = "skipped"
+		}
+
+		// Attach error if we have remaining errors for this action
+		if errorCount > processedCount && op.Status == "applied" {
+			// Best-effort error association
+			op.Status = "failed"
+			processedCount++
+		}
+
+		operations = append(operations, op)
+	}
+
+	return operations
 }

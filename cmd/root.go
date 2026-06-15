@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	"github.com/yeisme/taskbridge/internal/provider"
+	"github.com/yeisme/taskbridge/pkg/buildinfo"
 	"github.com/yeisme/taskbridge/pkg/config"
 	"github.com/yeisme/taskbridge/pkg/logger"
 )
@@ -39,10 +40,12 @@ var (
 
 // rootCmd root command
 var rootCmd = &cobra.Command{
-	Use:   "taskbridge",
-	Short: "TaskBridge - CLI workflow tool for AI and multi-Todo platforms",
-	Long: `TaskBridge is a CLI-based task workflow tool.
-Used to connect various Todo software and AI to unify task models, synchronize processes and automation capabilities.
+	Use:     "taskbridge",
+	Short:   "Local task execution control plane for humans and agents",
+	Version: buildinfo.Version,
+	Long: `TaskBridge is a local task execution control plane shared by humans and agents.
+It connects multiple Todo platforms and AI to unify task models, synchronization,
+and safe execution workflows.
 
 Supported platforms:
   - Microsoft Todo
@@ -51,16 +54,14 @@ Supported platforms:
   - TickTick
   - Dida365 (domestic TickTick)
   - Todoist
-  - OmniFocus (macOS)
-  - Apple Reminders (macOS/iOS)
 
-Example:
-  taskbridge provider list # View available Providers
-  taskbridge sync #Perform a single synchronization
-  taskbridge list # List all tasks
-  taskbridge analyze # Analysis task (four-quadrant view)
-  taskbridge project create # Create project draft
-  taskbridge governance achievement # task achievement analysis`,
+Get started:
+  taskbridge doctor              # Check environment
+  taskbridge demo today          # Preview the daily workbench (no auth needed)
+  taskbridge today               # Open the daily workbench
+  taskbridge next                # Get the next recommended step
+  taskbridge review              # Run a task health review
+  taskbridge agent capabilities  # Show Agent-callable commands`,
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }

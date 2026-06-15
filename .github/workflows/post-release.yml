@@ -1,0 +1,136 @@
+name: Post-release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to smoke test, for example v1.2.3
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+
+jobs:
+  archive-smoke-unix:
+    name: Archive smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Download checksum and runner archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          os="$(uname -s)"
+          arch="$(uname -m)"
+          case "$arch" in
+            x86_64|amd64) arch="x86_64" ;;
+            arm64|aarch64) arch="arm64" ;;
+            *) echo "Unsupported runner architecture: $arch" >&2; exit 1 ;;
+          esac
+          archive="taskbridge_${version}_${os}_${arch}.tar.gz"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern checksums.txt
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$archive"
+          awk -v archive="$archive" '$2 == archive { print }' checksums.txt > selected-checksums.txt
+          if [ ! -s selected-checksums.txt ]; then
+            echo "No checksum entry found for $archive" >&2
+            exit 1
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum --check selected-checksums.txt
+          else
+            shasum -a 256 --check selected-checksums.txt
+          fi
+          mkdir -p unpacked
+          tar -xzf "$archive" -C unpacked
+          binary="$(find unpacked -type f -name taskbridge -perm -111 | sort | head -n 1)"
+          if [ -z "$binary" ]; then
+            binary="$(find unpacked -type f -name taskbridge | sort | head -n 1)"
+          fi
+          if [ -z "$binary" ]; then
+            echo "No taskbridge binary found after unpacking $archive" >&2
+            exit 1
+          fi
+          chmod +x "$binary"
+          "$binary" --version
+          "$binary" --help
+          "$binary" demo today
+
+  archive-smoke-windows:
+    name: Archive smoke (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - name: Download checksum and runner archive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:RELEASE_TAG -replace '^v', ''
+          $archive = "taskbridge_${version}_Windows_x86_64.zip"
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern checksums.txt
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $archive
+          $line = Get-Content .\checksums.txt | Where-Object { (($_ -split '\s+')[1]) -eq $archive } | Select-Object -First 1
+          if (-not $line) {
+            throw "No checksum entry found for $archive"
+          }
+          $expected = (($line -split '\s+')[0]).ToLowerInvariant()
+          $actual = ((Get-FileHash -Algorithm SHA256 $archive).Hash).ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "Checksum mismatch for $archive. Expected $expected, got $actual"
+          }
+          Expand-Archive -Path $archive -DestinationPath .\unpacked -Force
+          $binary = Get-ChildItem .\unpacked -Recurse -Filter taskbridge.exe | Select-Object -First 1
+          if (-not $binary) {
+            throw "No taskbridge.exe binary found after unpacking $archive"
+          }
+          & $binary.FullName --version
+          & $binary.FullName --help
+          & $binary.FullName demo today
+
+  homebrew-cask-smoke:
+    name: Homebrew cask smoke
+    runs-on: macos-latest
+    steps:
+      - name: Install cask and smoke TaskBridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew tap yeisme/tap https://github.com/yeisme/homebrew-tap
+          brew update
+          brew install --cask taskbridge
+          taskbridge --version
+          taskbridge --help
+          taskbridge demo today
+
+  scoop-smoke:
+    name: Scoop smoke
+    runs-on: windows-latest
+    env:
+      RUN_SCOOP_SMOKE: ${{ vars.RUN_SCOOP_SMOKE }}
+    steps:
+      - name: Install Scoop manifest and smoke TaskBridge
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUN_SCOOP_SMOKE -ne 'true') {
+            Write-Host '::notice::Skipping Scoop smoke because RUN_SCOOP_SMOKE is not true. Enable it when yeisme/scoop-bucket is accessible from GitHub-hosted Windows runners and Scoop bootstrap is allowed.'
+            exit 0
+          }
+          Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+          Invoke-RestMethod https://get.scoop.sh -OutFile install-scoop.ps1
+          .\install-scoop.ps1 -RunAsAdmin
+          $env:PATH = "$HOME\scoop\shims;$env:PATH"
+          scoop bucket add yeisme https://github.com/yeisme/scoop-bucket
+          scoop install taskbridge
+          taskbridge --version
+          taskbridge --help
+          taskbridge demo today

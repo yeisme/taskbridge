@@ -15,6 +15,7 @@ TaskBridge 是面向 AI 与多 Todo 平台的 CLI 工作流工具：本地文件
 ### 命令手册
 
 - [命令地图](./commands/README.md)：按工作流解释每个 root command 管什么。
+- [demo](./commands/demo.md)：无需认证的控制面 demo 入口。
 - [agent](./commands/agent.md)：Agent 安全执行入口。
 - [analyze](./commands/analyze.md)：四象限、优先级、趋势分析。
 - [auth](./commands/auth.md)：Provider 认证和 token 管理。

@@ -211,8 +211,8 @@ func TestPrintTasksMarkdown_OutputNotEmpty(t *testing.T) {
 	if !strings.Contains(output, "MD test") {
 		t.Errorf("markdown output should contain task title, got: %s", output)
 	}
-	if !strings.Contains(output, "# 📋") {
-		t.Errorf("markdown output should contain heading")
+	if !strings.Contains(output, "| --- |") {
+		t.Errorf("markdown output should contain table syntax")
 	}
 }
 

@@ -21,82 +21,82 @@ vars:
 
 tasks:
   default:
-    desc: 列出可用开发任务
+    desc: List available development tasks
     cmds:
       - task --list
     silent: true
 
   tools:install:
-    desc: 安装可选 Go 开发工具（golangci-lint、GoReleaser、Air）
+    desc: Install optional Go development tools (golangci-lint, GoReleaser, Air)
     cmds:
       - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
       - go install github.com/goreleaser/goreleaser/v2@v2.12.6
       - go install github.com/air-verse/air@v1.63.0
 
   deps:
-    desc: 下载 Go 模块依赖
+    desc: Download Go module dependencies
     cmds:
       - go mod download
 
   tidy:
-    desc: 整理 go.mod 和 go.sum
+    desc: Tidy go.mod and go.sum
     cmds:
       - go mod tidy
 
   mod-check:
-    desc: 检查 go.mod/go.sum 是否已整理
+    desc: Check if go.mod/go.sum are tidy
     cmds:
       - go mod tidy
       - git diff --exit-code -- go.mod go.sum
 
   fmt:
-    desc: 使用 golangci-lint 格式化代码
+    desc: Format code with golangci-lint
     cmds:
       - '{{.GOLANGCI_LINT}} fmt'
 
   fmt-check:
-    desc: 检查 golangci-lint 格式化差异
+    desc: Check golangci-lint formatting diff
     cmds:
       - '{{.GOLANGCI_LINT}} fmt --diff'
 
   lint:
-    desc: 使用 golangci-lint 进行代码检查
+    desc: Run golangci-lint code checks
     cmds:
       - '{{.GOLANGCI_LINT}} run'
 
   lint:new:
-    desc: 只检查相对 BASE_REV 的新增 lint 问题
+    desc: Check only new lint issues relative to BASE_REV
     cmds:
       - '{{.GOLANGCI_LINT}} run --new-from-rev={{.BASE_REV}}'
 
   lint:fix:
-    desc: 使用 golangci-lint 自动修复可修复问题
+    desc: Auto-fix fixable issues with golangci-lint
     cmds:
       - '{{.GOLANGCI_LINT}} run --fix'
 
   test:
-    desc: 运行所有测试
+    desc: Run all tests
     cmds:
       - go test ./...
 
   test:verbose:
-    desc: 运行所有测试（详细输出）
+    desc: Run all tests (verbose output)
     cmds:
       - go test -v ./...
 
   test:race:
-    desc: 运行 race detector 测试
+    desc: Run race detector tests
     cmds:
       - go test -race ./...
 
   test:integration:
-    desc: 运行 CLI 合同集成测试并写入脱敏 evidence
+    desc: Run CLI contract integration tests with redacted evidence
     cmds:
       - |
         set -eu
         run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
         dir="temp/integration-test-runs/$run_id"
-        command="go test ./cmd -run 'Output|Provider|Auth|List|Config|Version' -count=1"
+        command="go test ./cmd -run 'Output|Provider|Auth|List|Config|Version|DemoToday|Doctor|Quickstart|Contract|Audit|AgentExecute' -count=1"
         mkdir -p "$dir/artifacts"
         printf '%s\n' "$command" > "$dir/command.txt"
         python3 -c 'import json, os, sys; keys=("GOOS","GOARCH","TASKBRIDGE_HOME","TASKBRIDGE_STORAGE_PATH","NO_COLOR"); json.dump({k: os.environ.get(k, "") for k in keys}, open(sys.argv[1], "w"), ensure_ascii=False, indent=2)' "$dir/env.json"
@@ -112,119 +112,119 @@ tasks:
         exit "$code"
 
   build:
-    desc: 构建当前平台二进制文件到 dist/
+    desc: Build current platform binary to dist/
     cmds:
       - mkdir -p {{.BIN_DIR}}
       - go build -trimpath -ldflags '{{.LDFLAGS}}' -o {{.BIN}} .
       - '{{.BIN}} --help >/dev/null'
 
   install:
-    desc: 安装当前平台 taskbridge 二进制到 Go bin
+    desc: Install current platform taskbridge binary to Go bin
     cmds:
       - go install -trimpath -ldflags '{{.LDFLAGS}}' .
 
   snapshot:
-    desc: 使用 GoReleaser 构建当前系统架构快照
+    desc: Build current architecture snapshot with GoReleaser
     cmds:
       - '{{.GORELEASER}} build --snapshot --clean --single-target'
 
   release:check:
-    desc: 校验 GoReleaser 配置
+    desc: Validate GoReleaser config
     cmds:
       - '{{.GORELEASER}} check'
 
   release:local:
-    desc: 本地演练 GoReleaser 发布流程（不发布）
+    desc: Local GoReleaser release rehearsal (no publish)
     cmds:
       - '{{.GORELEASER}} release --snapshot --clean --skip=publish'
 
   release:build:
-    desc: 使用 GoReleaser 构建正式产物（不发布）
+    desc: Build release artifacts with GoReleaser (no publish)
     cmds:
       - '{{.GORELEASER}} build --clean'
 
   release:
-    desc: 使用 GoReleaser 发布版本
+    desc: Publish release with GoReleaser
     cmds:
       - '{{.GORELEASER}} release --clean'
 
   dev:
-    desc: 格式化、测试并构建本地二进制
+    desc: Format, test and build local binary
     cmds:
       - task: fmt
       - task: test
       - task: build
 
   dev:watch:
-    desc: 使用 Air 监听文件变化并重建 CLI（需安装 air）
+    desc: Watch files and rebuild CLI with Air (requires air)
     cmds:
       - '{{.AIR}}'
 
   docker:build:
-    desc: 构建 Docker 镜像
+    desc: Build Docker image
     cmds:
       - docker build -t taskbridge:latest .
 
   docker:build-no-cache:
-    desc: 构建 Docker 镜像（不使用缓存）
+    desc: Build Docker image (no cache)
     cmds:
       - docker build --no-cache -t taskbridge:latest .
 
   docker:up:
-    desc: 启动 Docker 容器
+    desc: Start Docker container
     cmds:
       - docker compose up -d
 
   docker:down:
-    desc: 停止 Docker 容器
+    desc: Stop Docker container
     cmds:
       - docker compose down
 
   docker:logs:
-    desc: 查看 Docker 容器日志
+    desc: View Docker container logs
     cmds:
       - docker compose logs -f taskbridge
 
   docker:ps:
-    desc: 查看 Docker 容器状态
+    desc: View Docker container status
     cmds:
       - docker compose ps
 
   docker:restart:
-    desc: 重启 Docker 容器
+    desc: Restart Docker container
     cmds:
       - docker compose restart
 
   docker:shell:
-    desc: 进入 Docker 容器 shell
+    desc: Enter Docker container shell
     cmds:
       - docker compose exec taskbridge sh
 
   docker:clean:
-    desc: 清理 Docker 资源（容器、镜像、卷）
+    desc: Clean up Docker resources (containers, images, volumes)
     cmds:
       - docker compose down -v --rmi local
 
   docker:dev:
-    desc: 开发模式 - 构建并启动容器
+    desc: Development mode - build and start container
     deps: [docker:build]
     cmds:
       - docker compose up -d
 
   docker:full:
-    desc: 完整重建并启动（不使用缓存）
+    desc: Full rebuild and start (no cache)
     cmds:
       - docker compose down
       - docker build --no-cache -t taskbridge:latest .
       - docker compose up -d
 
   docker:mongodb:
-    desc: 启动包含 MongoDB 的完整服务
+    desc: Start full service with MongoDB
     cmds:
       - docker compose --profile mongodb up -d
 
   check:
-    desc: 运行本地质量门禁（依赖、模块、格式、lint、测试、构建）
+    desc: Run local quality gate (deps, modules, format, lint, test, build)
     cmds:
       - task: deps
       - task: mod-check
@@ -234,6 +234,6 @@ tasks:
       - task: build
 
   ci:
-    desc: 运行 CI 检查（check）
+    desc: Run CI checks (check)
     cmds:
       - task: check

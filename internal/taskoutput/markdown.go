@@ -3,52 +3,40 @@ package taskoutput
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/yeisme/taskbridge/internal/model"
 )
 
-// PrintTasksMarkdown renders tasks as Markdown grouped by quadrant.
+// PrintTasksMarkdown renders tasks as a Markdown table.
 func PrintTasksMarkdown(w io.Writer, tasks []model.Task) {
-	fmt.Fprintln(w, "# 📋 Task list")
-
-	quadrants := map[model.Quadrant][]model.Task{}
+	fmt.Fprintln(w, "| ID | Title | Status | Priority | Quadrant | Due | Source | List |")
+	fmt.Fprintln(w, "| --- | --- | --- | --- | --- | --- | --- | --- |")
 	for _, t := range tasks {
-		quadrants[t.Quadrant] = append(quadrants[t.Quadrant], t)
-	}
-
-	quadrantNames := map[model.Quadrant]string{
-		model.QuadrantUrgentImportant:       "🔥 Urgent and important (Q1)",
-		model.QuadrantNotUrgentImportant:    "📋 Important not urgent (Q2)",
-		model.QuadrantUrgentNotImportant:    "⚡ Urgent not important (Q3)",
-		model.QuadrantNotUrgentNotImportant: "🗑️ Not urgent or important (Q4)",
-	}
-
-	quadrantOrder := []model.Quadrant{
-		model.QuadrantUrgentImportant,
-		model.QuadrantNotUrgentImportant,
-		model.QuadrantUrgentNotImportant,
-		model.QuadrantNotUrgentNotImportant,
-	}
-
-	for _, q := range quadrantOrder {
-		qtasks := quadrants[q]
-		if len(qtasks) > 0 {
-			fmt.Fprintf(w, "## %s\n\n", quadrantNames[q])
-			for _, t := range qtasks {
-				status := " "
-				if t.Status == model.StatusCompleted {
-					status = "x"
-				}
-				due := ""
-				if t.DueDate != nil {
-					due = fmt.Sprintf(" 📅 %s", t.DueDate.Format("2006-01-02"))
-				}
-				fmt.Fprintf(w, "- [%s] %s%s\n", status, t.Title, due)
-			}
-			fmt.Fprintln(w)
+		due := ""
+		if t.DueDate != nil {
+			due = t.DueDate.Format("2006-01-02")
 		}
+		fmt.Fprintf(
+			w,
+			"| %s | %s | %s | %s | %s | %s | %s | %s |\n",
+			markdownCell(t.ID),
+			markdownCell(t.Title),
+			markdownCell(string(t.Status)),
+			markdownCell(compactPriority(t.Priority)),
+			markdownCell(compactQuadrant(t.Quadrant)),
+			markdownCell(due),
+			markdownCell(string(t.Source)),
+			markdownCell(t.ListName),
+		)
 	}
+	fmt.Fprintf(w, "\n**Total**: %d tasks\n", len(tasks))
+}
 
-	fmt.Fprintln(w, "---")
-	fmt.Fprintf(w, "**Total**: %d tasks\n", len(tasks))
+func markdownCell(s string) string {
+	s = strings.ReplaceAll(s, "|", "\\|")
+	s = strings.ReplaceAll(s, "\r\n", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	return s
 }

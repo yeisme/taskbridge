@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/yeisme/taskbridge/internal/actionaudit"
 	"github.com/yeisme/taskbridge/internal/actionfile"
 	"github.com/yeisme/taskbridge/internal/clioutput"
 	"github.com/yeisme/taskbridge/internal/controlplane"
@@ -48,11 +49,26 @@ var reviewCmd = &cobra.Command{
 	RunE:  runReview,
 }
 
+var demoCmd = &cobra.Command{
+	Use:   "demo",
+	Short: "Explore TaskBridge with built-in demo data (no provider authentication required)",
+}
+
+var demoTodayCmd = &cobra.Command{
+	Use:   "today",
+	Short: "Preview the daily workbench using demo data",
+	RunE:  runDemoToday,
+}
+
 func init() {
 	rootCmd.AddCommand(todayCmd)
 	rootCmd.AddCommand(nextCmd)
 	rootCmd.AddCommand(inboxCmd)
 	rootCmd.AddCommand(reviewCmd)
+	rootCmd.AddCommand(demoCmd)
+
+	demoCmd.AddCommand(demoTodayCmd)
+	demoTodayCmd.Flags().StringVarP(&controlFormat, "format", "f", "text", "Output format (text, json)")
 
 	for _, cmd := range []*cobra.Command{todayCmd, nextCmd, inboxCmd, reviewCmd} {
 		cmd.Flags().StringVarP(&controlFormat, "format", "f", "text", "Output format (text, json)")
@@ -65,6 +81,17 @@ func init() {
 	reviewCmd.Flags().StringVar(&reviewApplyFile, "apply-file", "", "Execute structured action file")
 	reviewCmd.Flags().BoolVar(&reviewDryRun, "dry-run", false, "Simulate execution of action file")
 	reviewCmd.Flags().BoolVar(&reviewConfirm, "confirm", false, "Confirm execution of action file")
+}
+
+func runDemoToday(_ *cobra.Command, _ []string) error {
+	ctx := context.Background()
+
+	service := mockControlService()
+	result, err := service.Today(ctx, controlplane.Options{Source: controlSource})
+	if err != nil {
+		return commandError("Failed to generate demo workbench", err)
+	}
+	return printTodayResult(controlFormat, result)
 }
 
 func controlService() (*controlplane.Service, func(), error) {
@@ -164,7 +191,29 @@ func runReviewApplyFile() error {
 	}
 	defer cleanup()
 	result := actionfile.Executor{TaskStore: taskStore}.Execute(context.Background(), actions, actionfile.ExecuteOptions{DryRun: reviewDryRun, Confirm: reviewConfirm})
+
+	// Write audit receipt
+	sessionID := fmt.Sprintf("review_%s", time.Now().Format("20060102_150405"))
+	receipt := actionaudit.Start(sessionID, "review --apply-file", reviewApplyFile, reviewDryRun, reviewConfirm)
+	status := result.Status
+	if result.RequiresConfirmation && status == "ok" {
+		status = "requires_confirmation"
+	}
+	ops := buildAuditOperations(actions, result, reviewDryRun, reviewConfirm)
+	stats := actionaudit.Stats{
+		Total:     result.Total,
+		Updated:   result.Updated,
+		Skipped:   result.Skipped,
+		Errors:    len(result.Errors),
+		Confirmed: result.Updated,
+	}
+	receipt.Finish(status, stats, ops, result.Errors)
+	if storeErr := actionaudit.NewStore(cfg.Storage.Path).Save(receipt); storeErr != nil {
+		result.Errors = append(result.Errors, "audit receipt write failed: "+storeErr.Error())
+	}
+
 	projection := buildReviewApplyProjection(result)
+	projection.Facts["audit_receipt_id"] = sessionID
 	return printProjectionWithLegacyJSON(controlFormat, result, projection, func() { fmt.Print(renderProjectProjection("Review action file", projection)) })
 }
 

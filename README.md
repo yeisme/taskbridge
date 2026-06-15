@@ -2,41 +2,51 @@
 
 <div align="center">
 
-**面向 AI 与多 Todo 平台的 CLI 工作流工具**
+**Local task execution control plane for humans and agents**
 
 </div>
 
 ---
 
-## 本地工作流
+## Local Workflow
 
-### 安装
+### Installation
 
-**Homebrew (macOS / Linux)：**
+**Homebrew cask (macOS / Linux):**
 
 ```bash
 brew tap yeisme/tap
-brew install taskbridge
+brew install --cask taskbridge
 ```
 
-**Scoop (Windows)：**
+**Scoop (Windows):**
 
 ```powershell
 scoop bucket add yeisme https://github.com/yeisme/scoop-bucket
-scoop install yeisme/taskbridge
+scoop install taskbridge
 ```
 
-**从 Release 下载二进制：** 见 [Releases](https://github.com/yeisme/taskbridge/releases)。
+**GitHub Release archives:** Download the archive for your platform from [Releases](https://github.com/yeisme/taskbridge/releases), verify it with `checksums.txt`, unpack it, and place `taskbridge` on your `PATH`.
 
-**从源码构建：**
+**Direct Linux package assets:** Download `.deb`, `.rpm`, or `.apk` files from [Releases](https://github.com/yeisme/taskbridge/releases). These are direct release assets, not repository-backed APT, YUM, or APK channels.
+
+**Go install:**
+
+```bash
+go install github.com/yeisme/taskbridge@latest
+```
+
+**Build from source:**
 
 ```bash
 git clone https://github.com/yeisme/taskbridge.git
 cd taskbridge
-go build -trimpath -ldflags="-s -w" -o taskbridge
+task build
 ```
 
-### 配置
+Package installers install only the `taskbridge` binary and static release metadata. They do not create provider credentials, OAuth tokens, local task stores, or remote Todo writes.
+
+### Configuration
 
 ```bash
 export TASKBRIDGE_HOME=~/.taskbridge
@@ -44,14 +54,15 @@ export TASKBRIDGE_STORAGE_PATH=~/.taskbridge/data
 export TASKBRIDGE_PROVIDERS=microsoft,todoist
 ```
 
-首次使用建议先运行诊断：
+For first use, run diagnostics first, then try the demo:
 
 ```bash
 taskbridge doctor
 taskbridge quickstart
+taskbridge demo today
 ```
 
-### Provider 认证
+### Provider Authentication
 
 ```bash
 taskbridge auth status
@@ -66,31 +77,31 @@ taskbridge provider enable todoist
 taskbridge provider test todoist
 ```
 
-Provider 连接详细指南见 [docs/provider-setup-guide.md](docs/provider-setup-guide.md)。OAuth 凭证文件保存在 `~/.taskbridge/credentials/<provider>_credentials.json`，认证 token 保存在 `~/.taskbridge/credentials/tokens.json`。
+For the detailed Provider connection guide, see [docs/provider-setup-guide.md](docs/provider-setup-guide.md). OAuth credential files are saved under `~/.taskbridge/credentials/<provider>_credentials.json`, and authentication tokens are saved in `~/.taskbridge/credentials/tokens.json`.
 
-### 任务浏览与管理
+### Task Browsing and Management
 
 ```bash
 taskbridge list
 taskbridge list --all
 taskbridge list --source microsoft --status todo
-taskbridge list --query "今天"
+taskbridge list --query "today"
 taskbridge list --format json
 taskbridge lists
 taskbridge lists --source microsoft
 ```
 
 ```bash
-taskbridge task add "整理 OpenSpec 输出契约" --due 2026-06-10 --priority 3
+taskbridge task add "Organize OpenSpec output contract" --due 2026-06-10 --priority 3
 taskbridge task show <task-id> --format json
 taskbridge task edit <task-id> --due 2026-06-12
 taskbridge task done <task-id>
 taskbridge task undo <task-id>
 ```
 
-`list` 支持按来源、状态、象限、优先级、标签、清单、关键词过滤；输出格式支持 `table`、`json`、`markdown`、`compact`、`tsv`。`task` 面向本地 store，不直接写远端 Provider；远端同步必须走 `sync`。
+`list` supports filtering by source, status, quadrant, priority, tag, list, and keyword; output formats include `table`, `json`, `markdown`, `compact`, and `tsv`. `task` targets the local store and does not write directly to remote Providers; remote synchronization must go through `sync`.
 
-### 同步
+### Sync
 
 ```bash
 taskbridge sync pull microsoft
@@ -106,32 +117,39 @@ taskbridge sync audit <session-id> --format json
 taskbridge sync watch microsoft --interval 10m
 ```
 
-`sync pull` 写本地 storage；`sync push` 写远端 Provider；`bidirectional` 双向写入。`--dry-run` 不写本地 storage，不调用远端写 API。远端覆盖、删除、冲突丢弃必须显式确认。
+`sync pull` writes local storage; `sync push` writes remote Providers; `bidirectional` writes both ways. `--dry-run` does not write local storage or call remote write APIs. Remote overwrite, deletion, and conflict discard require explicit confirmation.
 
-### 每日控制面
+### Daily control plane
 
 ```bash
 taskbridge today
-taskbridge today --mock
-taskbridge today --format json
+taskbridge today --json
 taskbridge next
 taskbridge next --limit 3
 taskbridge next --source openspec
 taskbridge inbox
 taskbridge inbox --limit 10 --source todoist
 taskbridge review
-taskbridge review --format json
+taskbridge review --json
 taskbridge review --apply-file actions.json --dry-run
 taskbridge review --apply-file actions.json --confirm
 ```
 
-`today` 是每日任务工作台，把今日必须做、即将失控、建议下一步放在一个入口。`next` 推荐当前最值得推进的下一步。`inbox` 列出无归属、缺日期或待整理任务。`review` 做任务健康复盘，默认只建议不写入。
-
-### 项目规划
+New users can explore without any provider authentication:
 
 ```bash
-taskbridge project create "学习 OpenClaw"
-taskbridge project create "发布 TaskBridge 控制面" --goal-text "希望完成控制面四阶段"
+taskbridge demo today
+taskbridge demo today --json
+```
+
+`today` is the daily task workbench: must-do today, at-risk tasks, and suggested next steps in one view. `next` recommends the most valuable task to advance now. `inbox` lists tasks without a home, due date, or triage status. `review` runs a health check and suggests actions; by default it only suggests, never writes.
+
+
+### Project Planning
+
+```bash
+taskbridge project create "Learn OpenClaw"
+taskbridge project create "Ship TaskBridge control plane" --goal-text "Complete the four control-plane phases"
 taskbridge project list
 taskbridge project split <project-id> --max-tasks 10
 taskbridge project split-markdown <project-id> --file plan.md
@@ -144,9 +162,9 @@ taskbridge project done <project-id>
 taskbridge project archive <project-id>
 ```
 
-`project create` 创建草稿；`split` 生成拆分建议；`confirm` 确认落库创建本地任务；`sync` 同步到 Provider。`adjust` 默认 dry-run，有 action 时必须确认后应用。`archive` 不删除历史数据。
+`project create` creates a draft; `split` generates decomposition suggestions; `confirm` confirms and creates local tasks in storage; `sync` syncs to Providers. `adjust` is dry-run by default and requires confirmation before applying actions. `archive` does not delete historical data.
 
-### 治理与智能辅助
+### Governance and Smart Assistance
 
 ```bash
 taskbridge governance overdue-health --format json
@@ -159,9 +177,9 @@ taskbridge governance decompose-task <task-id> --write-tasks
 taskbridge governance achievement
 ```
 
-`overdue-health` 分析逾期任务健康度；`resolve-overdue` 批量处理逾期任务；`rebalance-longterm` 调配长期无排期任务；`detect-decomposition` 识别复杂候选任务；`decompose-task` 拆成执行步骤；`achievement` 分析完成情况。批量完成、批量改期、删除、远端覆盖必须有 dry-run/confirm/action file gate。
+`overdue-health` analyzes overdue task health; `resolve-overdue` handles overdue tasks in bulk; `rebalance-longterm` redistributes long-term unscheduled tasks; `detect-decomposition` identifies complex task candidates; `decompose-task` splits a task into execution steps; `achievement` analyzes completion. Bulk completion, bulk rescheduling, deletion, and remote overwrite must have a dry-run/confirm/action-file gate.
 
-### 分析
+### Analysis
 
 ```bash
 taskbridge analyze quadrant
@@ -172,24 +190,24 @@ taskbridge analyze trend
 taskbridge analyze report --json
 ```
 
-`analyze` 提供四象限、优先级、时间分布、趋势和综合报告分析。默认 human 输出使用共享 stats panel；`--json` 输出 envelope，legacy `--format json` 仍保持可解析兼容 payload。只读命令，不改任务、不同步 Provider。
+`analyze` provides quadrant, priority, time distribution, trend, and combined report analysis. Default human output uses the shared stats panel; `--json` outputs an envelope, while legacy `--format json` remains compatible with parseable payloads. These are read-only commands: they do not change tasks or sync Providers.
 
-### Agent 集成
+### Agent Integration
 
 ```bash
 taskbridge agent capabilities
 taskbridge agent today
-taskbridge agent plan "学习 OpenClaw" --dry-run
+taskbridge agent plan "Learn OpenClaw" --dry-run
 taskbridge agent execute --action-file actions.json --dry-run
 taskbridge agent execute --action-file actions.json --confirm
 taskbridge agent schemas
 ```
 
-`agent` 是 Agent 安全执行入口。stdout 永远是 `taskbridge.agent-result.v1` JSON。Agent 不直接读写 `~/.taskbridge` 数据文件，不持有 Provider token。危险动作没有 `--confirm` 时返回 `requires_confirmation=true`，不能写入。
+`agent` is the Agent-safe execution entry point. stdout is always `taskbridge.agent-result.v1` JSON. Agents do not directly read or write `~/.taskbridge` data files and do not hold Provider tokens. Dangerous actions return `requires_confirmation=true` without writing when `--confirm` is missing.
 
-普通命令优先使用 `--json` envelope 或 `--agent` key=value，例如 `taskbridge version --json`、`taskbridge provider list --agent`、`taskbridge config show --json`；Agent 脚本不要解析 human output。
+Regular commands should prefer the `--json` envelope or `--agent` key=value output, such as `taskbridge version --json`, `taskbridge provider list --agent`, and `taskbridge config show --json`; Agent scripts should not parse human output.
 
-### 后台服务
+### Background Service
 
 ```bash
 taskbridge serve
@@ -197,65 +215,65 @@ taskbridge serve --token-refresh
 taskbridge serve --sync --sync-interval 15m
 ```
 
-`serve` 启动长运行后台服务，用于 token 自动刷新和定时同步。日志写 stderr 或日志系统；stdout 遵守 JSON/events 契约。
+`serve` starts a long-running background service for automatic token refresh and scheduled sync. Logs go to stderr or the logging system; stdout follows the JSON/events contract.
 
-### 交互式终端
+### Interactive Terminal
 
 ```bash
 taskbridge tui
 ```
 
-启动交互式终端界面浏览和操作任务。TUI 不作为脚本机器输出入口，Agent 和 CI 不应依赖 TUI 输出。
+Starts an interactive terminal interface for browsing and operating on tasks. The TUI is not a scriptable machine-output entry point; Agents and CI should not depend on TUI output.
 
-## 支持的平台
+## Supported Platforms
 
-| 平台            | 状态      | 认证方式       | 特点       |
-| --------------- | --------- | -------------- | ---------- |
-| Microsoft Todo  | ✅ 已完成 | OAuth 2.0      | 完整支持   |
-| Google Tasks    | ✅ 已完成 | OAuth 2.0      | 基础支持   |
-| Feishu Tasks    | ✅ 已完成 | OAuth 2.0      | 完整支持   |
-| TickTick        | ✅ 已完成 | OpenAPI Token  | 原生四象限 |
-| 滴答清单        | ✅ 已完成 | OpenAPI Token  | 国内版     |
-| Todoist         | ✅ 已完成 | API Token      | 完整支持   |
-| OmniFocus       | 📋 计划中 | —              | macOS 专用 |
-| Apple Reminders | 📋 计划中 | —              | macOS/iOS  |
+| Platform        | Status    | Auth Method    | Notes            |
+| --------------- | --------- | -------------- | ---------------- |
+| Microsoft Todo  | ✅ Done   | OAuth 2.0      | Full support     |
+| Google Tasks    | ✅ Done   | OAuth 2.0      | Basic support    |
+| Feishu Tasks    | ✅ Done   | OAuth 2.0      | Full support     |
+| TickTick        | ✅ Done   | OpenAPI Token  | Native quadrants |
+| Dida            | ✅ Done   | OpenAPI Token  | China version    |
+| Todoist         | ✅ Done   | API Token      | Full support     |
+| OmniFocus       | 📋 Planned | —              | macOS only       |
+| Apple Reminders | 📋 Planned | —              | macOS/iOS        |
 
-## 项目结构
+## Project Structure
 
 ```text
 taskbridge/
-├── cmd/                    # CLI 命令入口
+├── cmd/                    # CLI command entry points
 ├── internal/
-│   ├── auth/               # token 与认证
-│   ├── model/              # 核心数据模型
-│   ├── project/            # 项目与规划存储
-│   ├── projectplanner/     # 目标拆分与计划建议
-│   ├── provider/           # Todo 软件适配器
+│   ├── auth/               # Tokens and authentication
+│   ├── model/              # Core data models
+│   ├── project/            # Project and planning storage
+│   ├── projectplanner/     # Goal decomposition and plan suggestions
+│   ├── provider/           # Todo app adapters
 │   │   ├── microsoft/      # Microsoft Todo
 │   │   ├── google/         # Google Tasks
 │   │   ├── feishu/         # Feishu Tasks
-│   │   ├── ticktick/       # TickTick / 滴答清单
+│   │   ├── ticktick/       # TickTick / Dida
 │   │   └── todoist/        # Todoist
-│   ├── storage/            # 存储层
-│   └── sync/               # 同步引擎
+│   ├── storage/            # Storage layer
+│   └── sync/               # Sync engine
 ├── pkg/
-│   ├── config/             # 配置管理
-│   ├── logger/             # 日志
-│   ├── paths/              # 路径约定
-│   └── ui/                 # CLI/TUI UI 组件
-├── docs/                   # 设计与使用文档
-│   └── commands/           # 命令手册
-└── openspec/               # OpenSpec 变更管理
+│   ├── config/             # Configuration management
+│   ├── logger/             # Logging
+│   ├── paths/              # Path conventions
+│   └── ui/                 # CLI/TUI UI components
+├── docs/                   # Design and usage docs
+│   └── commands/           # Command manual
+└── openspec/               # OpenSpec change management
 ```
 
-## 技术栈
+## Tech Stack
 
-- **语言**: Go 1.25+
+- **Language**: Go 1.25+
 - **CLI**: Cobra
-- **配置**: Viper
-- **存储**: 文件存储 / MongoDB（可选）
+- **Configuration**: Viper
+- **Storage**: File storage / MongoDB (optional)
 
-## 本地验证与开发工具
+## Local Validation and Development Tools
 
 ```bash
 task deps
@@ -266,13 +284,13 @@ task build
 task check
 ```
 
-首次配置开发机时可安装辅助工具：
+When setting up a development machine for the first time, install helper tools:
 
 ```bash
 task tools:install
 ```
 
-发布配置和本地快照构建：
+Release configuration and local snapshot builds:
 
 ```bash
 task release:check
@@ -280,25 +298,25 @@ task snapshot
 task release:local
 ```
 
-可选热加载（需安装 Air）：
+Optional hot reload (requires Air):
 
 ```bash
 task dev:watch
 ```
 
-没有安装 `task` 时，使用等价命令：
+When `task` is not installed, use equivalent commands:
 
 ```bash
 go test ./...
 mkdir -p dist && go build -trimpath -ldflags="-s -w" -o dist/taskbridge
 ```
 
-## 文档入口
+## Documentation Entry Points
 
-- [子项目指令](./AGENTS.md)
-- [文档地图](./docs/README.md)
-- [命令手册](./docs/commands/README.md)
-- [Provider 连接指南](./docs/provider-setup-guide.md)
-- [架构设计](./docs/architecture.md)
-- [任务控制面路线](./docs/task-control-plane-roadmap.md)
+- [Subproject instructions](./AGENTS.md)
+- [Documentation map](./docs/README.md)
+- [Command manual](./docs/commands/README.md)
+- [Provider connection guide](./docs/provider-setup-guide.md)
+- [Architecture design](./docs/architecture.md)
+- [Task control-plane roadmap](./docs/task-control-plane-roadmap.md)
 - [OpenSpec](./openspec/config.yaml)

@@ -175,14 +175,14 @@ func buildDoctorResult() controlplane.DoctorResult {
 		}
 	}
 	if authenticated == 0 {
-		add(controlplane.DoctorCheck{ID: "provider_auth", Status: "warning", Message: "no provider authenticated", NextAction: "taskbridge today --mock"})
+		add(controlplane.DoctorCheck{ID: "provider_auth", Status: "warning", Message: "no provider authenticated", NextAction: "taskbridge demo today"})
 	} else {
 		add(controlplane.DoctorCheck{ID: "provider_auth", Status: "ok", Message: fmt.Sprintf("%d provider(s) authenticated", authenticated)})
 	}
 
 	next := "taskbridge today"
 	if status != "ok" || authenticated == 0 {
-		next = "taskbridge today --mock"
+		next = "taskbridge demo today"
 	}
 	return controlplane.DoctorResult{Schema: controlplane.SchemaDoctor, Status: status, Checks: checks, NextAction: next}
 }

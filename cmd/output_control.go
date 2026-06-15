@@ -10,7 +10,7 @@ import (
 )
 
 func wantsJSON(format string) bool {
-	return strings.EqualFold(strings.TrimSpace(format), "json") || IsQuietMode()
+	return outputJSON || strings.EqualFold(strings.TrimSpace(format), "json") || IsQuietMode()
 }
 
 func resolveOutputFormat(format string) string {

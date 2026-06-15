@@ -1,6 +1,6 @@
-# TaskBridge Agent 契约
+# TaskBridge Agent Contract
 
-更新时间：2026-05-01
+Updated: 2026-06-15
 
 ## 目标
 
@@ -108,3 +108,99 @@ Agent 写入必须先生成 action file，再通过 `agent execute` 执行。
 - [agent-result.schema.json](schemas/agent-result.schema.json)
 - [actions.schema.json](schemas/actions.schema.json)
 - [today.schema.json](schemas/today.schema.json)
+
+## Exit Codes
+
+Agent commands follow the AI-native CLI output contract for exit behavior:
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | Success or dry-run completed |
+| 1 | Execution error (failed actions, store init failure, invalid action file) |
+| 2 | Usage error (missing required flag, invalid arguments) |
+
+On failure:
+- stdout contains a valid `taskbridge.agent-result.v1` JSON envelope with `status: "error"`.
+- stderr contains human-readable diagnostics only.
+- No tokens, Authorization headers, or Provider payloads are written to stdout or stderr.
+
+## Audit Receipts
+
+Every `review --apply-file` and `agent execute` attempt writes an audit receipt to:
+
+```text
+<storage.path>/audit/actions/<session_id>.json
+```
+
+Receipt schema is `taskbridge.action-audit.v1` with fields:
+
+```json
+{
+  "schema_version": "taskbridge.action-audit.v1",
+  "session_id": "req_20260615_060053",
+  "command": "agent execute",
+  "action_file": "actions.json",
+  "dry_run": true,
+  "confirm": false,
+  "status": "error",
+  "started_at": "2026-06-15T06:00:53Z",
+  "finished_at": "2026-06-15T06:00:53Z",
+  "duration_ms": 12,
+  "stats": {"total": 2, "updated": 0, "skipped": 2, "errors": 2, "confirmed": 0},
+  "operations": [
+    {"action_id": "a1", "type": "defer_task", "task_id": "t1", "status": "previewed", "dry_run": true, "confirmed": false}
+  ],
+  "errors": ["action a1 get task failed: task not found: t1"],
+  "redaction": "task titles and fields are local task data; no tokens, authorization headers, or provider payloads are recorded"
+}
+```
+
+Read receipts via:
+
+```bash
+taskbridge audit show <session-id>
+taskbridge audit list
+```
+
+Receipts are CLI-authored records. Agents and users must not hand-write or modify receipt JSON.
+
+## Schema Index
+
+`taskbridge agent schemas` outputs a validator-friendly schema index with name, description, and commands for each schema:
+
+```json
+{
+  "schema": "taskbridge.agent-schema-index.v1",
+  "schemas": [
+    {"name": "taskbridge.agent-result.v1", "description": "...", "commands": ["agent today", "agent execute"]},
+    ...
+  ]
+}
+```
+
+Covered schemas:
+- `taskbridge.agent-result.v1`
+- `taskbridge.agent-capabilities.v1`
+- `taskbridge.today.v1`
+- `taskbridge.actions.v1`
+- `taskbridge.action-result.v1`
+- `taskbridge.action-audit.v1`
+- `taskbridge.sync-session.v1`
+- `taskbridge.project-review.v1`
+
+## MCP Adapter (Deferred)
+
+MCP adapter is intentionally deferred. It will only be built after:
+- `--json`, `--agent`, and `--events` output modes are stable.
+- Action audit receipts are proven reliable.
+- `agent schemas` output is validator-friendly.
+- Integration evidence confirms dry-run does not write and confirm is auditable.
+
+The MCP adapter will be a thin wrapper that:
+- Exposes schema/capabilities.
+- Calls CLI or internal application service.
+- Does not directly read/write `~/.taskbridge`.
+- Does not hold Provider tokens.
+- Does not bypass confirm/audit gates.
+
+Remote Provider write, bidirectional sync auto-resolve, and Apple Reminders/OmniFocus providers are also deferred. They will be tracked in separate OpenSpec changes.

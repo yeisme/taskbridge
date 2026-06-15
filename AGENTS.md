@@ -1,48 +1,54 @@
-# TaskBridge 子项目指令
+# TaskBridge Subproject Instructions
 
-## 技术栈
+## Tech Stack
 
 - Go 1.25+
 - Cobra CLI
-- 文件存储为默认运行时存储，MongoDB 为可选存储
-- 统一任务模型位于 `internal/model`
+- File storage is the default runtime store; MongoDB is optional
+- The unified task model lives in `internal/model`
 
-## 架构边界
+## Architecture Boundaries
 
-- CLI 命令入口放在 `cmd/`。
-- 业务逻辑优先放在 `internal/`，CLI 层只做参数解析、调用服务和输出。
-- 用户可见稳定输出优先使用 JSON 结构体或 map，避免拼接不可解析文本。
-- 本地持久化应复用 `internal/persistence/atomicjson.go` 或既有 store 模式。
+- Put CLI command entry points in `cmd/`.
+- Keep business logic in `internal/` first; the CLI layer should only parse arguments, call services, and render output.
+- Prefer JSON structs or maps for stable user-visible output; avoid concatenated text that cannot be parsed.
+- Local persistence should reuse `internal/persistence/atomicjson.go` or existing store patterns.
 
-## 禁止事项
+## Prohibited
 
-- 不绕过 Provider 接口直接写远端 Todo 平台。
-- 不让 Agent 或 MCP adapter 直接读写 `~/.taskbridge` 数据文件。
-- 不在 `--format json` 输出中混入进度条、提示语或日志。
-- 不静默执行删除、批量完成、批量改期、远端覆盖和冲突丢弃。
+- Do not bypass the Provider interface to write directly to remote Todo platforms.
+- Do not let Agent or MCP adapters read or write `~/.taskbridge` data files directly.
+- Do not mix progress bars, prompts, or logs into `--format json` output.
+- Do not silently perform deletion, bulk completion, bulk rescheduling, remote overwrite, or conflict discard.
 
-## 测试与质量门禁
+## Tests and Quality Gates
 
-修改代码后至少运行：
+After code changes, run at least:
 
 ```bash
 task test
 ```
 
-涉及 CLI 编译、发布配置或命令面时运行：
+When CLI compilation, release configuration, or command surfaces are involved, run:
 
 ```bash
 task build
 task release:check
 ```
 
-提交前检查：
+When CLI process e2e, golden tests, or output contracts are involved, run:
+
+```bash
+task test:integration
+```
+
+Before submitting, run:
 
 ```bash
 task check
 ```
 
-- 新命令有单元测试或可重复的 CLI 行为测试。
-- `--dry-run` 不写本地存储，不调用远端写 API。
-- JSON 模式只写 stdout；日志和提示写 stderr。
-- GoReleaser、本地 build 和 Docker build 必须注入同一组 `pkg/buildinfo` ldflags。
+- New commands have unit tests or repeatable CLI behavior tests.
+- `--dry-run` does not write local storage or call remote write APIs.
+- JSON mode writes only to stdout; logs and prompts go to stderr.
+- GoReleaser, local builds, and Docker builds must inject the same `pkg/buildinfo` ldflags.
