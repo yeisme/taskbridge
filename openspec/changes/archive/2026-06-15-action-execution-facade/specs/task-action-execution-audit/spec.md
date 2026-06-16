@@ -1,8 +1,5 @@
-# task-action-execution-audit Specification
+## MODIFIED Requirements
 
-## Purpose
-定义 TaskBridge action file 执行的显式 dry-run/confirm 门禁、可复验审计 receipt、失败计数和本地写入证据要求，确保危险操作不会静默改变任务状态。
-## Requirements
 ### Requirement: Action file execution SHALL be explicit, auditable, and reversible at the local evidence level
 TaskBridge SHALL execute action files only through explicit dry-run or confirm modes and SHALL route action execution through a shared internal facade that produces per-action outcomes and an audit receipt for every action execution attempt.
 
@@ -79,4 +76,3 @@ TaskBridge SHALL create and update action audit receipts through application ser
 - **WHEN** TaskBridge writes the action audit receipt
 - **THEN** the receipt SHALL be treated as execution evidence
 - **AND** no task mutation SHALL be persisted because of the dry-run itself
-

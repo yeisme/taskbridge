@@ -1,7 +1,7 @@
 # english-cli-output-contract Specification
 
 ## Purpose
-TBD - created by archiving change english-cli-output-contract. Update Purpose after archive.
+定义 TaskBridge 默认英文 CLI 输出、稳定机器协议、stdout/stderr 分离、脱敏和输出合同测试要求，确保人类界面可读且自动化无需解析本地化文本。
 ## Requirements
 ### Requirement: Taskbridge defaults to English user-visible output
 

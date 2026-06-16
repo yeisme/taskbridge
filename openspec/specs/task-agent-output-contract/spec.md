@@ -1,7 +1,7 @@
 # task-agent-output-contract Specification
 
 ## Purpose
-TBD - created by archiving change taskbridge-control-plane-hardening. Update Purpose after archive.
+定义 TaskBridge 控制面和 agent 命令的机器可读输出、错误 exit code、能力声明和 schema 索引要求，确保 agent 只依赖稳定协议而不是人类摘要。
 ## Requirements
 ### Requirement: Control-plane commands SHALL support explicit machine output modes
 TaskBridge SHALL render control-plane command results from one projection into human summary, `--json`, `--agent`, and legacy `--format json` modes.
@@ -16,7 +16,7 @@ TaskBridge SHALL render control-plane command results from one projection into h
 - **WHEN** the operator runs `taskbridge next --agent`
 - **THEN** stdout SHALL contain stable `key=value` lines
 - **AND** it SHALL include `spec_version`, `mode=agent`, `command`, and `status`
-- **AND** it SHALL NOT include ANSI, tables, Chinese prose paragraphs, raw prompts, Provider payloads, or debug dumps
+- **AND** it SHALL NOT include ANSI, tables, localized prose paragraphs, raw prompts, Provider payloads, or debug dumps
 
 #### Scenario: legacy format json remains parseable
 - **WHEN** the operator runs `taskbridge review --format json`

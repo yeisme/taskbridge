@@ -61,6 +61,17 @@ type Error struct {
 	Error string `json:"error"`
 }
 
+// ConfirmationRequiredError 表示远程写入（删除或覆盖）需要显式确认。
+// 调用方应将其映射为 usage error（退出码 2），与 CLI 层 --delete/--force 提前拦截一致。
+type ConfirmationRequiredError struct {
+	// Operation 触发确认的操作类型："delete" 或 "overwrite"
+	Operation string
+}
+
+func (e *ConfirmationRequiredError) Error() string {
+	return fmt.Sprintf("sync remote %s requires --dry-run preview or --confirm", e.Operation)
+}
+
 // Options 同步选项
 type Options struct {
 	// Direction 同步方向
@@ -69,6 +80,8 @@ type Options struct {
 	Provider string
 	// DryRun 是否为模拟运行（不实际修改）
 	DryRun bool
+	// Confirm 是否确认执行远程覆盖或删除等危险写入。
+	Confirm bool
 	// Force 是否强制同步（忽略冲突）
 	Force bool
 	// ConflictResolve 冲突解决策略："local", "remote", "newer"
@@ -446,10 +459,15 @@ func (e *Engine) push(ctx context.Context, p provider.Provider, result *Result, 
 
 	// 创建本地任务的 SourceRawID 集合，用于后续比对
 	localSourceRawIDs := e.buildLocalSourceRawIDs(localTasks)
+	if opts.DeleteRemote && !opts.DryRun && !opts.Confirm {
+		return &ConfirmationRequiredError{Operation: "delete"}
+	}
 
 	// 推送本地任务
 	source := model.TaskSource(opts.Provider)
-	e.pushLocalTasks(ctx, p, localTasks, defaultListID, source, opts, result)
+	if err := e.pushLocalTasks(ctx, p, localTasks, defaultListID, source, opts, result); err != nil {
+		return err
+	}
 
 	// 双向比对：删除远程存在但本地不存在的任务
 	if opts.DeleteRemote {
@@ -499,7 +517,7 @@ func (e *Engine) buildLocalSourceRawIDs(tasks []model.Task) map[string]bool {
 }
 
 // pushLocalTasks 推送本地任务到远程
-func (e *Engine) pushLocalTasks(ctx context.Context, p provider.Provider, tasks []model.Task, defaultListID string, source model.TaskSource, opts Options, result *Result) {
+func (e *Engine) pushLocalTasks(ctx context.Context, p provider.Provider, tasks []model.Task, defaultListID string, source model.TaskSource, opts Options, result *Result) error {
 	for _, task := range tasks {
 		// 跳过已经从该 Provider 同步的任务
 		if task.Source != "" && task.Source != source && task.Source != "local" {
@@ -513,6 +531,14 @@ func (e *Engine) pushLocalTasks(ctx context.Context, p provider.Provider, tasks 
 			if err == nil && existingTask != nil {
 				// 任务存在，检查是否需要更新
 				if existingTask.UpdatedAt.Before(task.UpdatedAt) || opts.Force {
+					if opts.DryRun {
+						log.Info().Str("task", task.Title).Str("id", task.SourceRawID).Msg("[DryRun] 将更新远程任务")
+						result.Updated++
+						continue
+					}
+					if !opts.Confirm {
+						return &ConfirmationRequiredError{Operation: "overwrite"}
+					}
 					_, err := p.UpdateTask(ctx, task.ListID, &task)
 					if err != nil {
 						result.Errors = append(result.Errors, Error{
@@ -566,6 +592,7 @@ func (e *Engine) pushLocalTasks(ctx context.Context, p provider.Provider, tasks 
 		}
 		result.Pushed++
 	}
+	return nil
 }
 
 // deleteRemoteTasks 删除远程存在但本地不存在的任务

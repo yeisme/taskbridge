@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/yeisme/taskbridge/internal/actionaudit"
+	"github.com/yeisme/taskbridge/internal/actionexecution"
 	"github.com/yeisme/taskbridge/internal/actionfile"
 	"github.com/yeisme/taskbridge/internal/clioutput"
 	"github.com/yeisme/taskbridge/internal/controlplane"
@@ -181,40 +182,34 @@ func runReviewApplyFile() error {
 	if err := validateReviewApplyMode(reviewDryRun, reviewConfirm); err != nil {
 		return err
 	}
-	actions, err := actionfile.Load(reviewApplyFile)
-	if err != nil {
-		return commandError("Failed to read action file", err)
-	}
 	taskStore, _, cleanup, err := getCLIStores()
 	if err != nil {
 		return commandError("Failed to initialize storage", err)
 	}
 	defer cleanup()
-	result := actionfile.Executor{TaskStore: taskStore}.Execute(context.Background(), actions, actionfile.ExecuteOptions{DryRun: reviewDryRun, Confirm: reviewConfirm})
 
-	// Write audit receipt
 	sessionID := fmt.Sprintf("review_%s", time.Now().Format("20060102_150405"))
-	receipt := actionaudit.Start(sessionID, "review --apply-file", reviewApplyFile, reviewDryRun, reviewConfirm)
-	status := result.Status
-	if result.RequiresConfirmation && status == "ok" {
-		status = "requires_confirmation"
+	service := actionexecution.Service{TaskStore: taskStore, AuditStore: actionaudit.NewStore(cfg.Storage.Path)}
+	execResult, err := service.ExecuteFile(context.Background(), actionexecution.Options{
+		SessionID:      sessionID,
+		Command:        "review --apply-file",
+		ActionFilePath: reviewApplyFile,
+		DryRun:         reviewDryRun,
+		Confirm:        reviewConfirm,
+	})
+	if err != nil {
+		return commandError("Failed to read action file", err)
 	}
-	ops := buildAuditOperations(actions, result, reviewDryRun, reviewConfirm)
-	stats := actionaudit.Stats{
-		Total:     result.Total,
-		Updated:   result.Updated,
-		Skipped:   result.Skipped,
-		Errors:    len(result.Errors),
-		Confirmed: result.Updated,
-	}
-	receipt.Finish(status, stats, ops, result.Errors)
-	if storeErr := actionaudit.NewStore(cfg.Storage.Path).Save(receipt); storeErr != nil {
-		result.Errors = append(result.Errors, "audit receipt write failed: "+storeErr.Error())
-	}
-
+	result := execResult.Execution
 	projection := buildReviewApplyProjection(result)
 	projection.Facts["audit_receipt_id"] = sessionID
-	return printProjectionWithLegacyJSON(controlFormat, result, projection, func() { fmt.Print(renderProjectProjection("Review action file", projection)) })
+	if err := printProjectionWithLegacyJSON(controlFormat, result, projection, func() { fmt.Print(renderProjectProjection("Review action file", projection)) }); err != nil {
+		return err
+	}
+	if result.Status == "error" {
+		return &CLIError{Message: "review --apply-file completed with errors", ExitCode: 1}
+	}
+	return nil
 }
 
 func validateReviewApplyMode(dryRun, confirm bool) error {

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -50,6 +51,8 @@ var syncPushCmd = &cobra.Command{
 	Short: "Push tasks from local to remote",
 	Long: `Push local task changes to the selected provider.
 
+Remote task updates (overwrites) and deletes require --confirm or a --dry-run preview.
+
 Examples:
   taskbridge sync push google
   taskbridge sync push google --force`,
@@ -62,6 +65,8 @@ var syncBidirectionalCmd = &cobra.Command{
 	Use:   "bidirectional <provider>",
 	Short: "Two-way synchronization tasks",
 	Long: `Run bidirectional synchronization by pulling remote changes before pushing local changes.
+
+Remote task updates (overwrites) during the push phase require --confirm or a --dry-run preview.
 
 Example:
   taskbridge sync bidirectional google`,
@@ -98,6 +103,7 @@ Example:
 var (
 	syncDryRun       bool
 	syncForce        bool
+	syncConfirm      bool
 	syncInterval     time.Duration
 	syncOutput       string
 	syncDeleteRemote bool
@@ -118,6 +124,11 @@ func init() {
 		cmd.Flags().StringVarP(&syncOutput, "output", "o", "text", "Output format (text, json)")
 	}
 	syncStatusCmd.Flags().StringVarP(&syncOutput, "output", "o", "text", "Output format (text, json)")
+
+	//Push/Bidirectional/Watch shared write-safety option
+	for _, cmd := range []*cobra.Command{syncPushCmd, syncBidirectionalCmd, syncWatchCmd} {
+		cmd.Flags().BoolVar(&syncConfirm, "confirm", false, "Confirm remote overwrites, deletes, or forced writes")
+	}
 
 	//Push command specific options
 	syncPushCmd.Flags().BoolVar(&syncDeleteRemote, "delete", false, "Delete tasks that exist remotely but not locally")
@@ -179,6 +190,9 @@ func runSyncPush(cmd *cobra.Command, args []string) error {
 	if err := ensureSyncProjectionMode(); err != nil {
 		return err
 	}
+	if err := validateSyncWriteMode(syncDryRun, syncConfirm, syncForce, syncDeleteRemote); err != nil {
+		return err
+	}
 
 	engine, err := getSyncEngineForProvider(providerName)
 	if err != nil {
@@ -190,21 +204,49 @@ func runSyncPush(cmd *cobra.Command, args []string) error {
 		Provider:     providerName,
 		DryRun:       syncDryRun,
 		Force:        syncForce,
+		Confirm:      syncConfirm,
 		DeleteRemote: syncDeleteRemote,
 	}
 
 	result, err := engine.Sync(context.Background(), opts)
 	if err != nil {
-		return commandError("Sync failed", err)
+		return syncRunError(err)
 	}
 
 	return printSyncResult(result)
+}
+
+func validateSyncWriteMode(dryRun, confirm, force, deleteRemote bool) error {
+	if dryRun || confirm {
+		return nil
+	}
+	if deleteRemote {
+		return usageError("sync push --delete requires --dry-run preview or --confirm")
+	}
+	if force {
+		return usageError("sync push --force requires --dry-run preview or --confirm")
+	}
+	return nil
+}
+
+// syncRunError maps an engine.Sync error to the appropriate CLI error.
+// Confirmation-required errors surface as usage errors (exit code 2) so they
+// are indistinguishable from the --delete/--force pre-checks in scripts.
+func syncRunError(err error) error {
+	var cerr *sync.ConfirmationRequiredError
+	if errors.As(err, &cerr) {
+		return usageError(cerr.Error())
+	}
+	return commandError("Sync failed", err)
 }
 
 // runSyncBidirectional performs bidirectional synchronization
 func runSyncBidirectional(cmd *cobra.Command, args []string) error {
 	providerName := provider.ResolveProviderName(args[0])
 	if err := ensureSyncProjectionMode(); err != nil {
+		return err
+	}
+	if err := validateSyncWriteMode(syncDryRun, syncConfirm, syncForce, false); err != nil {
 		return err
 	}
 
@@ -218,11 +260,12 @@ func runSyncBidirectional(cmd *cobra.Command, args []string) error {
 		Provider:  providerName,
 		DryRun:    syncDryRun,
 		Force:     syncForce,
+		Confirm:   syncConfirm,
 	}
 
 	result, err := engine.Sync(context.Background(), opts)
 	if err != nil {
-		return commandError("Sync failed", err)
+		return syncRunError(err)
 	}
 
 	return printSyncResult(result)
@@ -243,6 +286,7 @@ func runSyncWatch(cmd *cobra.Command, args []string) error {
 	opts := sync.Options{
 		Direction: sync.DirectionBidirectional,
 		Provider:  providerName,
+		Confirm:   syncConfirm,
 	}
 
 	fmt.Printf("🔄 Start continuous synchronization %s (interval: %v)\n", providerName, syncInterval)

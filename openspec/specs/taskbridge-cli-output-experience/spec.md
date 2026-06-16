@@ -1,7 +1,7 @@
 # taskbridge-cli-output-experience Specification
 
 ## Purpose
-TBD - created by archiving change taskbridge-cli-output-polish. Update Purpose after archive.
+定义 TaskBridge 全 CLI tree 的统一 projection/renderer 输出体验，覆盖 human、JSON、agent、events、explain、颜色宽度、错误分流和脱敏边界。
 ## Requirements
 ### Requirement: The full CLI tree SHALL render human and machine output from one projection
 TaskBridge SHALL build a command projection once for every migrated CLI subtree and render default human output, `--json`, `--agent`, `--events`, and `--explain` from that projection instead of parsing localized human text or hand-writing unrelated payloads per mode. The maintained tree includes root/help/error, analyze, list/lists, provider/auth, task, sync, doctor/quickstart, today/next/inbox/review, project, governance, config/version, and serve/runtime output.
@@ -16,7 +16,7 @@ TaskBridge SHALL build a command projection once for every migrated CLI subtree 
 - **WHEN** the operator runs `taskbridge auth status --agent`
 - **THEN** stdout SHALL contain newline-delimited `key=value` facts
 - **AND** it SHALL include `spec_version`, `mode=agent`, `command`, and `status`
-- **AND** it SHALL NOT contain ANSI, tables, Chinese prose paragraphs, raw prompts, Provider payloads, or debug dumps
+- **AND** it SHALL NOT contain ANSI, tables, localized prose paragraphs, raw prompts, Provider payloads, or debug dumps
 
 #### Scenario: default output is human first
 - **WHEN** the operator runs `taskbridge version`

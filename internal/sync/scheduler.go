@@ -37,6 +37,8 @@ type SchedulerConfig struct {
 	ConflictResolve string `json:"conflict_resolve"`
 	// 是否删除远程多余任务
 	DeleteRemote bool `json:"delete_remote"`
+	// 是否确认执行远程覆盖或删除等危险写入
+	Confirm bool `json:"confirm"`
 }
 
 // Validate 验证调度器配置，确保 CronExpression 和 Interval 互斥
@@ -407,6 +409,7 @@ func (s *Scheduler) syncProvider(ctx context.Context, providerName string) (*Res
 		Provider:        providerName,
 		ConflictResolve: s.config.ConflictResolve,
 		DeleteRemote:    s.config.DeleteRemote,
+		Confirm:         s.config.Confirm,
 		Since:           since,
 	}
 

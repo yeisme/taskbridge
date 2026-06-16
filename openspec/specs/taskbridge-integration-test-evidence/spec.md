@@ -1,7 +1,7 @@
 # taskbridge-integration-test-evidence Specification
 
 ## Purpose
-TBD - created by archiving change taskbridge-control-plane-hardening. Update Purpose after archive.
+定义 TaskBridge 命令级、process e2e 和 golden 输出测试的项目内 evidence 落盘、原始 exit code 保留和敏感内容脱敏要求。
 ## Requirements
 ### Requirement: TaskBridge integration tests SHALL write local redacted evidence
 TaskBridge SHALL provide a project-local integration/process e2e test entrypoint that writes evidence for every run under `temp/integration-test-runs/<run-id>/`.

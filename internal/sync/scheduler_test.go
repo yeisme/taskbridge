@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yeisme/taskbridge/internal/model"
 	"github.com/yeisme/taskbridge/internal/provider"
 )
 
@@ -361,4 +362,47 @@ func TestScheduler_Trigger_IntervalMode(t *testing.T) {
 	// The mock storage/provider setup may not produce a meaningful result,
 	// but it should not panic
 	_ = err
+}
+
+// ================ Confirm propagation ================
+
+func TestSchedulerConfirmPropagatesToSync(t *testing.T) {
+	now := time.Now()
+	newProvider := func() *MockProvider {
+		return &MockProvider{
+			name:          "mock",
+			authenticated: true,
+			taskLists:     []model.TaskList{{ID: "list1", Name: "List 1"}},
+			tasks: map[string][]model.Task{
+				"list1": {{ID: "remote-1", SourceRawID: "remote-1", ListID: "list1", ListName: "List 1", Title: "Same", Status: model.StatusTodo, Source: model.TaskSource("mock"), UpdatedAt: now.Add(-time.Hour)}},
+			},
+		}
+	}
+	newStore := func() *MockStorage {
+		store := NewMockStorage()
+		if err := store.SaveTask(context.Background(), &model.Task{ID: "remote-1", SourceRawID: "remote-1", ListID: "list1", ListName: "List 1", Title: "Same", Status: model.StatusTodo, Source: model.TaskSource("mock"), UpdatedAt: now}); err != nil {
+			t.Fatalf("SaveTask: %v", err)
+		}
+		return store
+	}
+
+	// Confirm=true → remote overwrite proceeds.
+	confirmed := newProvider()
+	sConfirmed := NewScheduler(SchedulerConfig{Interval: time.Minute, Direction: DirectionPush, Confirm: true}, map[string]provider.Provider{"mock": confirmed}, newStore())
+	if _, err := sConfirmed.syncProvider(context.Background(), "mock"); err != nil {
+		t.Fatalf("confirmed syncProvider: %v", err)
+	}
+	if confirmed.updateCalls != 1 {
+		t.Fatalf("Confirm=true: updateCalls=%d, want 1", confirmed.updateCalls)
+	}
+
+	// Confirm=false → blocked before remote overwrite.
+	blocked := newProvider()
+	sBlocked := NewScheduler(SchedulerConfig{Interval: time.Minute, Direction: DirectionPush, Confirm: false}, map[string]provider.Provider{"mock": blocked}, newStore())
+	if _, err := sBlocked.syncProvider(context.Background(), "mock"); err == nil {
+		t.Fatal("Confirm=false: expected overwrite to be blocked")
+	}
+	if blocked.updateCalls != 0 {
+		t.Fatalf("Confirm=false: updateCalls=%d, want 0", blocked.updateCalls)
+	}
 }

@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/yeisme/taskbridge/internal/actionaudit"
+	"github.com/yeisme/taskbridge/internal/actionexecution"
 	"github.com/yeisme/taskbridge/internal/actionfile"
 	"github.com/yeisme/taskbridge/internal/clioutput"
 	"github.com/yeisme/taskbridge/internal/projectservice"
@@ -115,9 +118,23 @@ func runProjectAdjust(_ *cobra.Command, args []string) error {
 		return commandError("Build project adjustment failed", err)
 	}
 	if projectAdjustConfirm {
-		result := actionfile.Executor{TaskStore: service.TaskStore}.Execute(context.Background(), actions, actionfile.ExecuteOptions{DryRun: false, Confirm: true})
+		sessionID := fmt.Sprintf("project_adjust_%s", time.Now().Format("20060102_150405"))
+		execResult := (actionexecution.Service{TaskStore: service.TaskStore, AuditStore: actionaudit.NewStore(cfg.Storage.Path)}).Execute(context.Background(), actions, actionexecution.Options{
+			SessionID: sessionID,
+			Command:   "project adjust",
+			DryRun:    false,
+			Confirm:   true,
+		})
+		result := execResult.Execution
 		projection := buildActionExecuteProjection("project.adjust", "Project adjustment applied.", result)
-		return printProjectionWithLegacyJSON(projectFormat, result, projection, func() { fmt.Print(renderProjectProjection("Project adjustment", projection)) })
+		projection.Facts["audit_receipt_id"] = sessionID
+		if err := printProjectionWithLegacyJSON(projectFormat, result, projection, func() { fmt.Print(renderProjectProjection("Project adjustment", projection)) }); err != nil {
+			return err
+		}
+		if result.Status == "error" {
+			return &CLIError{Message: "project adjust completed with errors", ExitCode: 1}
+		}
+		return nil
 	}
 	result := map[string]interface{}{"schema": "taskbridge.project-adjust.v1", "dry_run": projectAdjustDryRun, "requires_confirmation": len(actions.Actions) > 0, "actions": actions.Actions}
 	projection := buildProjectAdjustPreviewProjection(result, len(actions.Actions))

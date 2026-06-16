@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/yeisme/taskbridge/internal/actionaudit"
-	"github.com/yeisme/taskbridge/internal/actionfile"
+	"github.com/yeisme/taskbridge/internal/actionexecution"
 	"github.com/yeisme/taskbridge/internal/agentcontract"
 	"github.com/yeisme/taskbridge/internal/controlplane"
 	"github.com/yeisme/taskbridge/internal/project"
@@ -201,40 +201,27 @@ func runAgentPlan(_ *cobra.Command, args []string) error {
 }
 
 func runAgentExecute(_ *cobra.Command, _ []string) error {
-	file, err := actionfile.Load(agentActionFile)
-	if err != nil {
-		return printAgent(agentcontract.Error(requestID(), "action_file_invalid", err.Error(), "Check action file"))
-	}
+	effectiveDryRun := effectiveAgentExecuteDryRun(agentDryRun, agentConfirm)
+	sessionID := requestID()
 	taskStore, _, cleanup, err := getCLIStores()
 	if err != nil {
-		return printAgent(agentcontract.Error(requestID(), "store_init_failed", err.Error(), "taskbridge doctor"))
+		return printAgent(agentcontract.Error(sessionID, "store_init_failed", err.Error(), "taskbridge doctor"))
 	}
 	defer cleanup()
-	effectiveDryRun := effectiveAgentExecuteDryRun(agentDryRun, agentConfirm)
 
-	sessionID := requestID()
-	receipt := actionaudit.Start(sessionID, "agent execute", agentActionFile, effectiveDryRun, agentConfirm)
-
-	result := actionfile.Executor{TaskStore: taskStore}.Execute(context.Background(), file, actionfile.ExecuteOptions{DryRun: effectiveDryRun, Confirm: agentConfirm})
-
-	// Build and save audit receipt
-	status := result.Status
-	if result.RequiresConfirmation && status == "ok" {
-		status = "requires_confirmation"
-	}
-	operations := buildAuditOperations(file, result, effectiveDryRun, agentConfirm)
-	stats := actionaudit.Stats{
-		Total:     result.Total,
-		Updated:   result.Updated,
-		Skipped:   result.Skipped,
-		Errors:    len(result.Errors),
-		Confirmed: result.Updated,
-	}
-	receipt.Finish(status, stats, operations, result.Errors)
-	if storeErr := actionaudit.NewStore(cfg.Storage.Path).Save(receipt); storeErr != nil {
-		result.Errors = append(result.Errors, "audit receipt write failed: "+storeErr.Error())
+	service := actionexecution.Service{TaskStore: taskStore, AuditStore: actionaudit.NewStore(cfg.Storage.Path)}
+	execResult, err := service.ExecuteFile(context.Background(), actionexecution.Options{
+		SessionID:      sessionID,
+		Command:        "agent execute",
+		ActionFilePath: agentActionFile,
+		DryRun:         effectiveDryRun,
+		Confirm:        agentConfirm,
+	})
+	if err != nil {
+		return printAgent(agentcontract.Error(sessionID, "action_file_invalid", err.Error(), "Check action file"))
 	}
 
+	result := execResult.Execution
 	envelope := agentcontract.OK(sessionID, effectiveDryRun, result)
 	if result.RequiresConfirmation {
 		envelope = agentcontract.Confirmation(sessionID, effectiveDryRun, result)
@@ -242,7 +229,6 @@ func runAgentExecute(_ *cobra.Command, _ []string) error {
 	if result.Status == "error" {
 		envelope.Status = "error"
 	}
-	// Include receipt id in result for agent visibility
 	if envelope.Result != nil {
 		if data, ok := envelope.Result.(map[string]interface{}); ok {
 			data["audit_receipt_id"] = sessionID
@@ -252,7 +238,6 @@ func runAgentExecute(_ *cobra.Command, _ []string) error {
 	if printErr != nil {
 		return printErr
 	}
-	// Agent contract: stdout has valid JSON, failure returns non-zero exit code.
 	if result.Status == "error" {
 		return &CLIError{Message: "agent execute completed with errors", ExitCode: 1}
 	}
@@ -329,53 +314,4 @@ func requestID() string {
 		return agentRequestID
 	}
 	return fmt.Sprintf("req_%s", time.Now().Format("20060102_150405"))
-}
-
-// buildAuditOperations converts action file actions and execution result into
-// audit receipt operations. Each action maps to one operation entry.
-func buildAuditOperations(file *actionfile.File, result actionfile.ExecuteResult, dryRun, confirm bool) []actionaudit.Operation {
-	if file == nil {
-		return nil
-	}
-	operations := make([]actionaudit.Operation, 0, len(file.Actions))
-
-	// Build error lookup by action index — errors in result.Errors are appended
-	// in action order, but we cannot perfectly map them. We record stats-level
-	// info and mark each action's status based on whether it was dangerous/unconfirmed.
-	errorCount := len(result.Errors)
-	processedCount := 0
-
-	for _, action := range file.Actions {
-		op := actionaudit.Operation{
-			ActionID:  action.ID,
-			Type:      action.Type,
-			TaskID:    action.TaskID,
-			ProjectID: action.ProjectID,
-			Reason:    action.Reason,
-			DryRun:    dryRun,
-			Confirmed: confirm,
-		}
-
-		// Determine status based on execution result
-		if action.RequiresConfirmation && !dryRun && !confirm {
-			op.Status = "skipped_requires_confirmation"
-		} else if dryRun {
-			op.Status = "previewed"
-		} else if confirm {
-			op.Status = "applied"
-		} else {
-			op.Status = "skipped"
-		}
-
-		// Attach error if we have remaining errors for this action
-		if errorCount > processedCount && op.Status == "applied" {
-			// Best-effort error association
-			op.Status = "failed"
-			processedCount++
-		}
-
-		operations = append(operations, op)
-	}
-
-	return operations
 }

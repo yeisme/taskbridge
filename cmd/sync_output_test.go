@@ -37,6 +37,34 @@ func TestRenderSyncResultUsesSummaryAndMetricsTable(t *testing.T) {
 	}
 }
 
+func TestRenderSyncResultDryRunSeparatesPlannedAndActualWrites(t *testing.T) {
+	oldDryRun := syncDryRun
+	syncDryRun = true
+	defer func() { syncDryRun = oldDryRun }()
+
+	projection := buildSyncResultProjection(&sync.Result{
+		Provider:  "google",
+		Direction: sync.DirectionPush,
+		Pushed:    1,
+		Updated:   1,
+		Deleted:   1,
+		Duration:  time.Second,
+	})
+
+	if projection.Facts["planned_writes"] != 3 {
+		t.Fatalf("expected planned_writes=3, got %#v", projection.Facts["planned_writes"])
+	}
+	if projection.Facts["written"] != 0 {
+		t.Fatalf("expected written=0 in dry-run, got %#v", projection.Facts["written"])
+	}
+	output := renderSyncResult(projection)
+	for _, want := range []string{"preview completed", "Planned writes", "3", "Written", "0"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("dry-run sync output missing %q:\n%s", want, output)
+		}
+	}
+}
+
 func TestRenderSyncStatusUsesProviderTable(t *testing.T) {
 	projection := buildSyncStatusProjection([]*sync.Status{{
 		Provider:       "google",

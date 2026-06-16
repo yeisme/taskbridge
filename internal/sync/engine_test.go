@@ -20,6 +20,9 @@ type MockProvider struct {
 	authenticated bool
 	taskLists     []model.TaskList
 	tasks         map[string][]model.Task // key: listID
+	createCalls   int
+	updateCalls   int
+	deleteCalls   int
 	mu            sync.Mutex
 }
 
@@ -98,6 +101,7 @@ func (m *MockProvider) SearchTasks(ctx context.Context, query string) ([]model.T
 
 func (m *MockProvider) CreateTask(ctx context.Context, listID string, task *model.Task) (*model.Task, error) {
 	m.mu.Lock()
+	m.createCalls++
 	defer m.mu.Unlock()
 	if m.tasks == nil {
 		m.tasks = make(map[string][]model.Task)
@@ -111,6 +115,7 @@ func (m *MockProvider) CreateTask(ctx context.Context, listID string, task *mode
 
 func (m *MockProvider) UpdateTask(ctx context.Context, listID string, task *model.Task) (*model.Task, error) {
 	m.mu.Lock()
+	m.updateCalls++
 	defer m.mu.Unlock()
 	if tasks, ok := m.tasks[listID]; ok {
 		for i, t := range tasks {
@@ -125,6 +130,7 @@ func (m *MockProvider) UpdateTask(ctx context.Context, listID string, task *mode
 
 func (m *MockProvider) DeleteTask(ctx context.Context, listID, taskID string) error {
 	m.mu.Lock()
+	m.deleteCalls++
 	defer m.mu.Unlock()
 	if tasks, ok := m.tasks[listID]; ok {
 		for i, t := range tasks {
@@ -778,6 +784,275 @@ func TestDryRun(t *testing.T) {
 	}
 }
 
+func TestPushDryRunDoesNotUpdateExistingRemoteTask(t *testing.T) {
+	now := time.Now()
+	mockProvider := &MockProvider{
+		name:          "mock",
+		authenticated: true,
+		taskLists:     []model.TaskList{{ID: "list1", Name: "List 1"}},
+		tasks: map[string][]model.Task{
+			"list1": {{ID: "remote-1", SourceRawID: "remote-1", Title: "Old title", UpdatedAt: now.Add(-time.Hour)}},
+		},
+	}
+	store := NewMockStorage()
+	if err := store.SaveTask(context.Background(), &model.Task{
+		ID:          "local-1",
+		Source:      model.TaskSource("mock"),
+		SourceRawID: "remote-1",
+		ListID:      "list1",
+		Title:       "New title",
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+	engine := NewEngine(map[string]provider.Provider{"mock": mockProvider}, store)
+
+	result, err := engine.Sync(context.Background(), Options{Direction: DirectionPush, Provider: "mock", DryRun: true})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+
+	if mockProvider.updateCalls != 0 {
+		t.Fatalf("dry-run called UpdateTask %d times", mockProvider.updateCalls)
+	}
+	if result.Updated != 1 {
+		t.Fatalf("dry-run should count one planned update, got %d", result.Updated)
+	}
+}
+
+func TestPushDryRunDoesNotCreateOrDeleteRemoteTasks(t *testing.T) {
+	mockProvider := &MockProvider{
+		name:          "mock",
+		authenticated: true,
+		taskLists:     []model.TaskList{{ID: "list1", Name: "List 1"}},
+		tasks: map[string][]model.Task{
+			"list1": {{ID: "remote-orphan", SourceRawID: "remote-orphan", Title: "Remote orphan"}},
+		},
+	}
+	store := NewMockStorage()
+	if err := store.SaveTask(context.Background(), &model.Task{ID: "local-new", Source: model.SourceLocal, Title: "Local new"}); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+	engine := NewEngine(map[string]provider.Provider{"mock": mockProvider}, store)
+
+	result, err := engine.Sync(context.Background(), Options{Direction: DirectionPush, Provider: "mock", DryRun: true, DeleteRemote: true})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+
+	if mockProvider.createCalls != 0 {
+		t.Fatalf("dry-run called CreateTask %d times", mockProvider.createCalls)
+	}
+	if mockProvider.deleteCalls != 0 {
+		t.Fatalf("dry-run called DeleteTask %d times", mockProvider.deleteCalls)
+	}
+	if result.Pushed != 1 || result.Deleted != 1 {
+		t.Fatalf("dry-run should count planned push/delete, got pushed=%d deleted=%d", result.Pushed, result.Deleted)
+	}
+}
+
+func TestPushDeleteRemoteRequiresConfirmation(t *testing.T) {
+	mockProvider := &MockProvider{
+		name:          "mock",
+		authenticated: true,
+		taskLists:     []model.TaskList{{ID: "list1", Name: "List 1"}},
+		tasks: map[string][]model.Task{
+			"list1": {{ID: "remote-orphan", SourceRawID: "remote-orphan", Title: "Remote orphan"}},
+		},
+	}
+	engine := NewEngine(map[string]provider.Provider{"mock": mockProvider}, NewMockStorage())
+
+	_, err := engine.Sync(context.Background(), Options{Direction: DirectionPush, Provider: "mock", DeleteRemote: true, Confirm: false})
+	if err == nil {
+		t.Fatal("expected delete remote without confirmation to fail")
+	}
+	var deleteErr1 *ConfirmationRequiredError
+	if !errors.As(err, &deleteErr1) || deleteErr1.Operation != "delete" {
+		t.Fatalf("expected ConfirmationRequiredError delete, got %T: %v", err, err)
+	}
+	if mockProvider.deleteCalls != 0 {
+		t.Fatalf("unconfirmed delete called DeleteTask %d times", mockProvider.deleteCalls)
+	}
+}
+
+func TestPushDeleteWithoutConfirmIsBlockedBeforeRemoteDelete(t *testing.T) {
+	mockProvider := &MockProvider{
+		name:          "mock",
+		authenticated: true,
+		taskLists:     []model.TaskList{{ID: "list1", Name: "List 1"}},
+		tasks: map[string][]model.Task{
+			"list1": {{ID: "remote-orphan", SourceRawID: "remote-orphan", Title: "Remote orphan"}},
+		},
+	}
+	store := NewMockStorage()
+	engine := NewEngine(map[string]provider.Provider{"mock": mockProvider}, store)
+
+	_, err := engine.Sync(context.Background(), Options{Direction: DirectionPush, Provider: "mock", DeleteRemote: true})
+	if err == nil {
+		t.Fatalf("expected unconfirmed remote delete to fail")
+	}
+	var deleteErr2 *ConfirmationRequiredError
+	if !errors.As(err, &deleteErr2) || deleteErr2.Operation != "delete" {
+		t.Fatalf("expected ConfirmationRequiredError delete, got %T: %v", err, err)
+	}
+	if mockProvider.deleteCalls != 0 {
+		t.Fatalf("unconfirmed delete called DeleteTask %d times", mockProvider.deleteCalls)
+	}
+}
+
+func TestPushUpdateWithoutConfirmIsBlockedBeforeRemoteOverwrite(t *testing.T) {
+	now := time.Now()
+	mockProvider := &MockProvider{
+		name:          "mock",
+		authenticated: true,
+		taskLists:     []model.TaskList{{ID: "list1", Name: "List 1"}},
+		tasks: map[string][]model.Task{
+			"list1": {{ID: "remote-1", SourceRawID: "remote-1", Title: "Old title", UpdatedAt: now.Add(-time.Hour)}},
+		},
+	}
+	store := NewMockStorage()
+	if err := store.SaveTask(context.Background(), &model.Task{
+		ID:          "local-1",
+		Source:      model.TaskSource("mock"),
+		SourceRawID: "remote-1",
+		ListID:      "list1",
+		Title:       "New title",
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+	engine := NewEngine(map[string]provider.Provider{"mock": mockProvider}, store)
+
+	_, err := engine.Sync(context.Background(), Options{Direction: DirectionPush, Provider: "mock"})
+	if err == nil {
+		t.Fatalf("expected unconfirmed remote overwrite to fail")
+	}
+	var overwriteErr *ConfirmationRequiredError
+	if !errors.As(err, &overwriteErr) || overwriteErr.Operation != "overwrite" {
+		t.Fatalf("expected ConfirmationRequiredError overwrite, got %T: %v", err, err)
+	}
+	if mockProvider.updateCalls != 0 {
+		t.Fatalf("unconfirmed overwrite called UpdateTask %d times", mockProvider.updateCalls)
+	}
+}
+
+func TestBidirectionalUpdateWithoutConfirmIsBlocked(t *testing.T) {
+	now := time.Now()
+	// 本地与远程内容相同（sameTaskContent → pull 跳过），但本地 UpdatedAt 更新 → push 触发覆盖。
+	mockProvider := &MockProvider{
+		name:          "mock",
+		authenticated: true,
+		taskLists:     []model.TaskList{{ID: "list1", Name: "List 1"}},
+		tasks: map[string][]model.Task{
+			"list1": {{ID: "remote-1", SourceRawID: "remote-1", Title: "Same", Status: model.StatusTodo, Source: model.TaskSource("mock"), UpdatedAt: now.Add(-time.Hour)}},
+		},
+	}
+	store := NewMockStorage()
+	if err := store.SaveTask(context.Background(), &model.Task{
+		ID:          "remote-1",
+		Source:      model.TaskSource("mock"),
+		SourceRawID: "remote-1",
+		ListID:      "list1",
+		ListName:    "List 1",
+		Title:       "Same",
+		Status:      model.StatusTodo,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+	engine := NewEngine(map[string]provider.Provider{"mock": mockProvider}, store)
+
+	_, err := engine.Sync(context.Background(), Options{Direction: DirectionBidirectional, Provider: "mock"})
+	if err == nil {
+		t.Fatalf("expected unconfirmed bidirectional overwrite to fail")
+	}
+	var cerr *ConfirmationRequiredError
+	if !errors.As(err, &cerr) || cerr.Operation != "overwrite" {
+		t.Fatalf("expected ConfirmationRequiredError overwrite, got %T: %v", err, err)
+	}
+	if mockProvider.updateCalls != 0 {
+		t.Fatalf("unconfirmed overwrite called UpdateTask %d times", mockProvider.updateCalls)
+	}
+}
+
+func TestBidirectionalConfirmedUpdateOverwritesRemote(t *testing.T) {
+	now := time.Now()
+	mockProvider := &MockProvider{
+		name:          "mock",
+		authenticated: true,
+		taskLists:     []model.TaskList{{ID: "list1", Name: "List 1"}},
+		tasks: map[string][]model.Task{
+			"list1": {{ID: "remote-1", SourceRawID: "remote-1", Title: "Same", Status: model.StatusTodo, Source: model.TaskSource("mock"), UpdatedAt: now.Add(-time.Hour)}},
+		},
+	}
+	store := NewMockStorage()
+	if err := store.SaveTask(context.Background(), &model.Task{
+		ID:          "remote-1",
+		Source:      model.TaskSource("mock"),
+		SourceRawID: "remote-1",
+		ListID:      "list1",
+		ListName:    "List 1",
+		Title:       "Same",
+		Status:      model.StatusTodo,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+	engine := NewEngine(map[string]provider.Provider{"mock": mockProvider}, store)
+
+	result, err := engine.Sync(context.Background(), Options{Direction: DirectionBidirectional, Provider: "mock", Confirm: true})
+	if err != nil {
+		t.Fatalf("confirmed bidirectional sync failed: %v", err)
+	}
+	if mockProvider.updateCalls != 1 {
+		t.Fatalf("confirmed overwrite called UpdateTask %d times, want 1", mockProvider.updateCalls)
+	}
+	if result.Updated != 1 {
+		t.Fatalf("expected updated=1, got %d", result.Updated)
+	}
+}
+
+func TestPushConfirmedUpdateAndDeleteCallRemoteWriteAPIs(t *testing.T) {
+	now := time.Now()
+	mockProvider := &MockProvider{
+		name:          "mock",
+		authenticated: true,
+		taskLists:     []model.TaskList{{ID: "list1", Name: "List 1"}},
+		tasks: map[string][]model.Task{
+			"list1": {
+				{ID: "remote-1", SourceRawID: "remote-1", Title: "Old title", UpdatedAt: now.Add(-time.Hour)},
+				{ID: "remote-orphan", SourceRawID: "remote-orphan", Title: "Remote orphan"},
+			},
+		},
+	}
+	store := NewMockStorage()
+	if err := store.SaveTask(context.Background(), &model.Task{
+		ID:          "remote-1",
+		Source:      model.TaskSource("mock"),
+		SourceRawID: "remote-1",
+		ListID:      "list1",
+		Title:       "New title",
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+	engine := NewEngine(map[string]provider.Provider{"mock": mockProvider}, store)
+
+	result, err := engine.Sync(context.Background(), Options{Direction: DirectionPush, Provider: "mock", DeleteRemote: true, Confirm: true})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if mockProvider.updateCalls != 1 {
+		t.Fatalf("confirmed overwrite called UpdateTask %d times", mockProvider.updateCalls)
+	}
+	if mockProvider.deleteCalls != 1 {
+		t.Fatalf("confirmed delete called DeleteTask %d times", mockProvider.deleteCalls)
+	}
+	if result.Updated != 1 || result.Deleted != 1 {
+		t.Fatalf("expected updated=1 deleted=1, got updated=%d deleted=%d", result.Updated, result.Deleted)
+	}
+}
+
 // TestResult 测试同步结果
 func TestResult(t *testing.T) {
 	result := &Result{
@@ -811,6 +1086,7 @@ func TestOptions(t *testing.T) {
 		Provider:        "test",
 		DryRun:          true,
 		Force:           true,
+		Confirm:         true,
 		ConflictResolve: "local",
 		DeleteRemote:    true,
 	}

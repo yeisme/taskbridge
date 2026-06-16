@@ -76,6 +76,32 @@ func TestExecuteConfirmMutatesTask(t *testing.T) {
 	}
 }
 
+func TestExecuteRecordsPerActionOutcomes(t *testing.T) {
+	ctx := context.Background()
+	store := newTaskStore(t)
+	if err := store.SaveTask(ctx, &model.Task{ID: "task-ok", Title: "ok", Status: model.StatusTodo, Source: model.SourceLocal, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+
+	result := Executor{TaskStore: store}.Execute(ctx, &File{Schema: Schema, Actions: []Action{
+		{ID: "act-ok", Type: "complete_task", TaskID: "task-ok"},
+		{ID: "act-missing", Type: "complete_task", TaskID: "missing"},
+	}}, ExecuteOptions{Confirm: true})
+
+	if result.Status != "error" {
+		t.Fatalf("status = %q, want error", result.Status)
+	}
+	if len(result.Actions) != 2 {
+		t.Fatalf("actions length = %d, want 2: %+v", len(result.Actions), result.Actions)
+	}
+	if result.Actions[0].ActionID != "act-ok" || result.Actions[0].Status != "applied" || result.Actions[0].Error != "" {
+		t.Fatalf("first outcome = %+v, want successful act-ok", result.Actions[0])
+	}
+	if result.Actions[1].ActionID != "act-missing" || result.Actions[1].Status != "failed" || result.Actions[1].Error == "" {
+		t.Fatalf("second outcome = %+v, want failed act-missing with error", result.Actions[1])
+	}
+}
+
 func newTaskStore(t *testing.T) *filestore.FileStorage {
 	t.Helper()
 	store, err := filestore.New(t.TempDir(), "json")

@@ -36,15 +36,26 @@ type ExecuteOptions struct {
 	Confirm bool
 }
 
+type ActionOutcome struct {
+	ActionID  string `json:"action_id"`
+	Type      string `json:"type"`
+	TaskID    string `json:"task_id,omitempty"`
+	ProjectID string `json:"project_id,omitempty"`
+	Status    string `json:"status"`
+	Error     string `json:"error,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+}
+
 type ExecuteResult struct {
-	Schema               string   `json:"schema"`
-	Status               string   `json:"status"`
-	DryRun               bool     `json:"dry_run"`
-	RequiresConfirmation bool     `json:"requires_confirmation"`
-	Total                int      `json:"total"`
-	Updated              int      `json:"updated"`
-	Skipped              int      `json:"skipped"`
-	Errors               []string `json:"errors"`
+	Schema               string          `json:"schema"`
+	Status               string          `json:"status"`
+	DryRun               bool            `json:"dry_run"`
+	RequiresConfirmation bool            `json:"requires_confirmation"`
+	Total                int             `json:"total"`
+	Updated              int             `json:"updated"`
+	Skipped              int             `json:"skipped"`
+	Errors               []string        `json:"errors"`
+	Actions              []ActionOutcome `json:"actions"`
 }
 
 type Executor struct {
@@ -70,30 +81,59 @@ func Load(path string) (*File, error) {
 }
 
 func (e Executor) Execute(ctx context.Context, file *File, opts ExecuteOptions) ExecuteResult {
-	result := ExecuteResult{Schema: "taskbridge.action-result.v1", Status: "ok", DryRun: opts.DryRun, Total: len(file.Actions), Errors: []string{}}
+	result := ExecuteResult{Schema: "taskbridge.action-result.v1", Status: "ok", DryRun: opts.DryRun, Errors: []string{}}
+	if file != nil {
+		result.Total = len(file.Actions)
+		result.Actions = make([]ActionOutcome, 0, len(file.Actions))
+	}
 	if e.TaskStore == nil {
 		result.Status = "error"
 		result.Errors = append(result.Errors, "task store is nil")
 		return result
 	}
+	if file == nil {
+		result.Status = "error"
+		result.Errors = append(result.Errors, "action file is nil")
+		return result
+	}
 	for _, action := range file.Actions {
+		outcome := ActionOutcome{
+			ActionID:  action.ID,
+			Type:      action.Type,
+			TaskID:    action.TaskID,
+			ProjectID: action.ProjectID,
+			Reason:    action.Reason,
+		}
 		if action.RequiresConfirmation && !opts.DryRun && !opts.Confirm {
 			result.RequiresConfirmation = true
 			result.Skipped++
+			outcome.Status = "requires_confirmation"
+			result.Actions = append(result.Actions, outcome)
 			continue
 		}
 		if isDangerous(action.Type) && !opts.DryRun && !opts.Confirm {
 			result.RequiresConfirmation = true
 			result.Skipped++
+			outcome.Status = "requires_confirmation"
+			result.Actions = append(result.Actions, outcome)
 			continue
 		}
 		if err := e.apply(ctx, action, opts); err != nil {
 			result.Status = "error"
 			result.Skipped++
+			outcome.Status = "failed"
+			outcome.Error = err.Error()
 			result.Errors = append(result.Errors, err.Error())
+			result.Actions = append(result.Actions, outcome)
 			continue
 		}
 		result.Updated++
+		if opts.DryRun {
+			outcome.Status = "previewed"
+		} else {
+			outcome.Status = "applied"
+		}
+		result.Actions = append(result.Actions, outcome)
 	}
 	return result
 }

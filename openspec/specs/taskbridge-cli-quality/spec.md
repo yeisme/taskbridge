@@ -1,7 +1,7 @@
 # taskbridge-cli-quality Specification
 
 ## Purpose
-TBD - created by archiving change taskbridge-code-quality-refactor. Update Purpose after archive.
+定义 TaskBridge CLI 质量基线：机器 stdout 可解析、命令层保持薄、provider/store 行为单一真源、测试证据脱敏、错误路径非零且无 panic。
 ## Requirements
 ### Requirement: List JSON output SHALL remain parseable
 `taskbridge list --format json` SHALL write exactly one JSON object to stdout for every successful list invocation, without human text, emoji, table rows, pagination hints, logs, prompts, or diagnostics appended before or after the JSON payload.
@@ -10,7 +10,7 @@ TBD - created by archiving change taskbridge-code-quality-refactor. Update Purpo
 - GIVEN the task store contains no tasks matching the list filters
 - WHEN an operator runs `taskbridge list --format json`
 - THEN stdout SHALL parse as one JSON object
-- AND stdout SHALL NOT contain `没有找到任务`, emoji, markdown, table borders, or pagination hint text
+- AND stdout SHALL NOT contain localized empty-result prose, emoji, markdown, table borders, or pagination hint text
 - AND empty result state SHALL be represented by JSON fields, not by human prose on stdout
 
 #### Scenario: paginated result remains JSON
@@ -18,7 +18,7 @@ TBD - created by archiving change taskbridge-code-quality-refactor. Update Purpo
 - WHEN an operator runs `taskbridge list --format json --limit 5`
 - THEN stdout SHALL parse as one JSON object
 - AND pagination metadata such as `limit`, `offset`, `total`, or `has_more` SHALL be represented in JSON
-- AND stdout SHALL NOT append a Chinese `--offset` hint after the JSON payload
+- AND stdout SHALL NOT append a localized `--offset` hint after the JSON payload
 
 #### Scenario: human hints stay outside machine stdout
 - GIVEN an operator requests a machine-readable list format
@@ -94,7 +94,7 @@ TaskBridge CLI commands SHALL handle storage initialization failures as normal c
 - GIVEN `<existing-file>` is a regular file path
 - WHEN an operator runs `taskbridge --storage-path <existing-file> list --format json`
 - THEN the command SHALL exit non-zero
-- AND stderr SHALL contain a Chinese storage initialization error summary
+- AND stderr SHALL contain an English storage initialization error summary
 - AND stdout SHALL NOT contain a panic stack trace
 - AND the process SHALL NOT dereference a nil cleanup function
 
@@ -111,7 +111,7 @@ TaskBridge auth commands SHALL return command errors for provider credential and
 - GIVEN Microsoft or Feishu credential files do not exist
 - WHEN an operator runs `taskbridge auth login microsoft` or `taskbridge auth login feishu`
 - THEN the command SHALL return a non-zero exit code
-- AND stderr or the approved human output channel SHALL include a Chinese setup guide
+- AND stderr or the approved human output channel SHALL include an English setup guide
 - AND scripts SHALL NOT observe the command as successful
 
 #### Scenario: static token refresh cannot read token state

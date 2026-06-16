@@ -43,6 +43,7 @@ var (
 	serveEnableSync        bool
 	serveSyncInterval      string
 	serveSyncOnStart       bool
+	serveSyncConfirm       bool
 	serveEnableHealth      bool
 	serveHealthPort        int
 	serveRefreshBuffer     string
@@ -59,6 +60,7 @@ func init() {
 	serveCmd.Flags().BoolVar(&serveEnableSync, "enable-sync", false, "Enable scheduled synchronization")
 	serveCmd.Flags().StringVar(&serveSyncInterval, "sync-interval", "5m", "Synchronization interval")
 	serveCmd.Flags().BoolVar(&serveSyncOnStart, "sync-on-start", true, "Run one synchronization immediately after service startup")
+	serveCmd.Flags().BoolVar(&serveSyncConfirm, "sync-confirm", false, "Confirm remote overwrites/deletes during scheduled sync (required for remote writes)")
 
 	// Health check configuration.
 	serveCmd.Flags().BoolVar(&serveEnableHealth, "enable-health", false, "Enable health endpoint")
@@ -126,6 +128,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 			MaxRetries:      3,
 			RetryInterval:   30 * time.Second,
 			ConflictResolve: "newer",
+			Confirm:         serveSyncConfirm,
 		}, loadResult.Providers, store)
 	}
 
