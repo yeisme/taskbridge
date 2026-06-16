@@ -41,7 +41,7 @@ Parallel lanes:
   Depends on: 0.1, 0.2  
   Acceptance: archives include project, version, OS, and normalized architecture; Windows stays zip; non-Windows stays tar.gz; checksum output is `checksums.txt` using sha256.  
   Validation command: `task release:check`  
-  Observed result: `task release:check` passed after GoReleaser v2.12.6 was installed; `task release:local` generated versioned archives such as `taskbridge_1.0.6-SNAPSHOT-4895fe2_Linux_x86_64.tar.gz` and `checksums.txt`.
+  Observed result: `task release:check` passed after GoReleaser v2.12.6 was installed; `task release:local` generated versioned archives such as `taskbridge_1.0.6-SNAPSHOT-4895fe2_Linux_x86_64.tar.gz`, versioned source archives via `{{ .ProjectName }}_{{ .Version }}_source`, and `checksums.txt`.
 
 - [x] 1.2 Add SPDX SBOM generation for release archives.
 
@@ -88,7 +88,7 @@ Parallel lanes:
   Depends on: 0.2  
   Acceptance: `.github/workflows/release.yml` uses `${{ secrets.GITHUB_TOKEN }}` for the current repository release and a separate `PUBLISHER_TOKEN` for tap/bucket writes, preferably minted through `actions/create-github-app-token`.  
   Validation command: `task release:check` plus workflow YAML review.  
-  Observed result: release workflow parses as YAML, uses `${{ secrets.GITHUB_TOKEN }}` for GoReleaser `GITHUB_TOKEN`, mints a package publisher token with `actions/create-github-app-token@v3`, and falls back to `secrets.PUBLISHER_TOKEN` only with an explicit warning.
+  Observed result: release workflow parses as YAML, uses `${{ secrets.GITHUB_TOKEN }}` for GoReleaser `GITHUB_TOKEN`, grants release-job `id-token: write` for provenance/attestation readiness without broadening publisher credentials, mints a package publisher token with `actions/create-github-app-token@v3`, and falls back to `secrets.PUBLISHER_TOKEN` only with an explicit warning.
 
 - [x] 2.2 Add snapshot release rehearsal smoke.
 
@@ -164,7 +164,7 @@ Parallel lanes:
   Depends on: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 3.1, 3.2, 3.3  
   Acceptance: local release checks, tests, and docs validation have observed results recorded in this task file.  
   Validation commands: `task release:check`, `task release:local`, `task test`, `task test:integration`, `openspec validate taskbridge-release-distribution --strict`, `task check`.  
-  Observed result: local gates passed. Latest `task test:integration` wrote redacted evidence `temp/integration-test-runs/20260615T120904Z-1788151/summary.json` with `status=success` and `exit_code=0`; `task check` passed with golangci-lint `0 issues`; workflow YAML parse passed for release and post-release workflows.
+  Observed result: local gates passed. Latest `task test:integration` wrote redacted evidence `temp/integration-test-runs/20260615T120904Z-1788151/summary.json` with `status=success` and `exit_code=0`; `task check` passed with golangci-lint `0 issues`; workflow YAML parse passed for release and post-release workflows. Follow-up verification in this session: `task release:check` passed; YAML parse passed for `.goreleaser.yaml`, `.github/workflows/release.yml`, and `.github/workflows/post-release.yml`; `go test ./internal/releasecontract -count=1` passed after adding release config/workflow/docs contract tests. `go test . -run 'TestReleaseDistribution' -count=1` was intentionally superseded by the isolated releasecontract package because unrelated in-flight sync edits made the root package fail to compile.
 
 - [x] 4.2 Run release artifact smoke against built dist.
 

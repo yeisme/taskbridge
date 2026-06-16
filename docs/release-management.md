@@ -22,6 +22,7 @@ Before cutting a release, confirm:
 - The working tree is clean and the intended release commit is pushed.
 - The release workflow can use the repository-scoped `GITHUB_TOKEN` for GitHub Release assets.
 - Cross-repository package publishing has `PUBLISHER_TOKEN` available. The preferred source is a short-lived token minted by `actions/create-github-app-token@v3` for `yeisme/homebrew-tap` and `yeisme/scoop-bucket`; a personal access token is an operator exception, not the default design.
+- The release job has `contents: write` for GitHub Release asset upload and `id-token: write` so the workflow can adopt keyless provenance or attestations without broadening the package publisher token.
 
 ## Validation Commands
 

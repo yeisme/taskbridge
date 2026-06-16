@@ -1,7 +1,7 @@
 # taskbridge-release-distribution Specification
 
 ## Purpose
-TBD - created by archiving change taskbridge-release-distribution. Update Purpose after archive.
+定义 TaskBridge 发布产物、校验和、SBOM、Linux 包、Homebrew cask、Scoop manifest、发布后 smoke 和 operator 文档的可验证分发要求。
 ## Requirements
 ### Requirement: TaskBridge releases SHALL publish verifiable artifacts
 
