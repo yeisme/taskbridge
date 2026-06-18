@@ -12,11 +12,11 @@
 
 ### Installation
 
-**Homebrew formula (macOS / Linux):**
+**Homebrew cask (macOS / Linux):**
 
 ```bash
 brew tap yeisme/tap
-brew install taskbridge
+brew install --cask taskbridge
 ```
 
 **Scoop (Windows):**

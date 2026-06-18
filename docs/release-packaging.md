@@ -25,10 +25,10 @@ Use Homebrew on macOS or Linux:
 
 ```bash
 brew tap yeisme/tap
-brew install taskbridge
+brew install --cask taskbridge
 ```
 
-The formula is generated during non-snapshot releases and published to `yeisme/homebrew-tap/Formula/taskbridge.rb`.
+The cask is generated during non-snapshot releases and published to `yeisme/homebrew-tap/Casks/taskbridge.rb`.
 
 ## Scoop
 

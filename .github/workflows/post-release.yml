@@ -96,17 +96,17 @@ jobs:
           & $binary.FullName --help
           & $binary.FullName demo today
 
-  homebrew-formula-smoke:
-    name: Homebrew formula smoke
+  homebrew-cask-smoke:
+    name: Homebrew cask smoke
     runs-on: macos-latest
     steps:
-      - name: Install formula and smoke TaskBridge
+      - name: Install cask and smoke TaskBridge
         shell: bash
         run: |
           set -euo pipefail
           brew tap yeisme/tap https://github.com/yeisme/homebrew-tap
           brew update
-          brew install taskbridge
+          brew install --cask taskbridge
           taskbridge --version
           taskbridge --help
           taskbridge demo today
