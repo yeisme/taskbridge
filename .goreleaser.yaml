@@ -96,7 +96,7 @@ scoops:
       name: yeisme
       email: yeisme@users.noreply.github.com
 
-homebrew_casks:
+brews:
   - name: taskbridge
     ids:
       - bundles
@@ -104,14 +104,16 @@ homebrew_casks:
       owner: yeisme
       name: homebrew-tap
       token: "{{ .Env.PUBLISHER_TOKEN }}"
-    directory: Casks
+    directory: Formula
     homepage: https://github.com/yeisme/taskbridge
     description: TaskBridge CLI for AI-assisted multi-provider task workflows.
     license: MIT
-    binaries:
-      - taskbridge
+    install: |
+      bin.install "taskbridge"
+    test: |
+      system "#{bin}/taskbridge", "--help"
     skip_upload: "{{ .IsSnapshot }}"
-    commit_msg_template: "Homebrew cask update for {{ .ProjectName }} version {{ .Tag }}"
+    commit_msg_template: "Homebrew formula update for {{ .ProjectName }} version {{ .Tag }}"
     commit_author:
       name: yeisme
       email: yeisme@users.noreply.github.com
