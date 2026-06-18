@@ -153,7 +153,7 @@ func TestReleaseWorkflowPermissionAndSmokeContract(t *testing.T) {
 		}
 	}
 	postWorkflowText := readTextFile(t, ".github/workflows/post-release.yml")
-	for _, want := range []string{"gh release download", "checksums.txt", "sha256sum --check", "Get-FileHash -Algorithm SHA256", "brew install --cask taskbridge", "scoop install taskbridge", "RUN_SCOOP_SMOKE"} {
+	for _, want := range []string{"gh release download", "checksums.txt", "sha256sum --check", "Get-FileHash -Algorithm SHA256", "brew trust yeisme/tap", "brew install --cask taskbridge", "scoop install taskbridge", "RUN_SCOOP_SMOKE"} {
 		if !strings.Contains(postWorkflowText, want) {
 			t.Fatalf("post-release workflow missing %q", want)
 		}

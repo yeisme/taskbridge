@@ -105,6 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           brew tap yeisme/tap https://github.com/yeisme/homebrew-tap
+          brew trust yeisme/tap
           brew update
           brew install --cask taskbridge
           taskbridge --version
