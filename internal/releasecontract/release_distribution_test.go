@@ -113,6 +113,12 @@ func TestReleaseDistributionConfigContract(t *testing.T) {
 func TestReleaseWorkflowPermissionAndSmokeContract(t *testing.T) {
 	releaseWorkflow := readYAMLFile(t, ".github/workflows/release.yml")
 	jobs := mapAt(t, releaseWorkflow, "jobs")
+	snapshotJob := mapAt(t, jobs, "snapshot")
+	snapshotSyft := findStep(t, listAt(t, snapshotJob, "steps"), "Set up Syft")
+	if got := stringAt(t, snapshotSyft, "uses"); got != "anchore/sbom-action/download-syft@v0.20.6" {
+		t.Fatalf("snapshot syft setup action = %q, want pinned download-syft action", got)
+	}
+
 	releaseJob := mapAt(t, jobs, "release")
 	permissions := mapAt(t, releaseJob, "permissions")
 	if got := stringAt(t, permissions, "contents"); got != "write" {
@@ -133,6 +139,10 @@ func TestReleaseWorkflowPermissionAndSmokeContract(t *testing.T) {
 	publisherToken := findStep(t, steps, "Create package publisher GitHub App token")
 	if got := stringAt(t, publisherToken, "uses"); got != "actions/create-github-app-token@v3" {
 		t.Fatalf("publisher token action = %q, want create-github-app-token v3", got)
+	}
+	releaseSyft := findStep(t, steps, "Set up Syft")
+	if got := stringAt(t, releaseSyft, "uses"); got != "anchore/sbom-action/download-syft@v0.20.6" {
+		t.Fatalf("release syft setup action = %q, want pinned download-syft action", got)
 	}
 
 	postReleaseWorkflow := readYAMLFile(t, ".github/workflows/post-release.yml")

@@ -52,6 +52,11 @@ jobs:
           version: v2.12.6
           args: check
 
+      - name: Set up Syft
+        uses: anchore/sbom-action/download-syft@v0.20.6
+        with:
+          syft-version: v1.42.3
+
       - name: Snapshot build
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -128,6 +133,11 @@ jobs:
           distribution: goreleaser
           version: v2.12.6
           args: check
+
+      - name: Set up Syft
+        uses: anchore/sbom-action/download-syft@v0.20.6
+        with:
+          syft-version: v1.42.3
 
       - name: Build release binary for smoke
         uses: goreleaser/goreleaser-action@v6
