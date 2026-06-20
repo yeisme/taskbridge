@@ -1,8 +1,5 @@
-# sync-write-safety Specification
+## MODIFIED Requirements
 
-## Purpose
-Defines TaskBridge remote sync write safety boundaries so dry-run never calls Provider write APIs, destructive remote deletes and overwrites require explicit confirmation across sync entry points, and planned write counts cannot be confused with actual writes.
-## Requirements
 ### Requirement: Sync push dry-run SHALL never call remote write APIs
 TaskBridge SHALL plan remote write operations separately from remote Provider mutation so dry-run can report intended work without creating, updating, or deleting remote tasks. This requirement applies to direct and continuous sync entry points that can push local state to a remote Provider.
 

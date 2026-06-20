@@ -41,7 +41,7 @@ taskbridge analyze report --format json
 
 | 模式 | 用途 |
 | --- | --- |
-| 默认中文摘要 | 人类查看分析结果。 |
+| 默认英文摘要 | 人类查看分析结果。 |
 | `--format json` | 机器解析分析结构。 |
 
 ## 边界

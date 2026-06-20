@@ -43,7 +43,7 @@ taskbridge review --apply-file actions.json --confirm
 
 | 模式 | 用途 |
 | --- | --- |
-| 默认中文复盘摘要 | 人类查看风险和建议动作。 |
+| 默认英文复盘摘要 | 人类查看风险和建议动作。 |
 | `--format json` | 输出 `taskbridge.review.v1` 或 action execution result。 |
 
 ## 边界

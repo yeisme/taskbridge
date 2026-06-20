@@ -60,7 +60,7 @@ taskbridge list --sync-now --source microsoft
 | 格式 | 用途 |
 | --- | --- |
 | `table`（默认） | 人类表格浏览。 |
-| `json` | 机器可解析，不能混入中文提示。 |
+| `json` | 机器可解析，不能混入人类提示。 |
 | `markdown` | 文档或笔记集成。 |
 | `compact` | 终端紧凑浏览。 |
 | `tsv` | Shell glue 或 Excel 导入。 |
@@ -69,7 +69,7 @@ taskbridge list --sync-now --source microsoft
 
 - 默认只读。
 - `--sync-now` 会先拉取远端任务到本地 storage；不做远端写入。
-- 分页、total、has_more 等机器事实必须进入 JSON 字段，不能只出现在中文提示里。
+- 分页、total、has_more 等机器事实必须进入 JSON 字段，不能只出现在 human output 里。
 
 ## 常见错误
 

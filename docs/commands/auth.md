@@ -90,7 +90,7 @@ taskbridge auth logout <provider>
 
 | 模式 | 用途 |
 | --- | --- |
-| 默认中文状态 | 人类查看认证状态和修复建议。 |
+| 默认英文状态 | 人类查看认证状态和修复建议。 |
 | `--format json` | 机器解析认证状态。 |
 
 认证相关机器输出必须脱敏，不输出 token、secret、cookie 或 auth header。

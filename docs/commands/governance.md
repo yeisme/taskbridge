@@ -61,7 +61,7 @@ taskbridge governance achievement --format json
 
 | 模式 | 用途 |
 | --- | --- |
-| 默认中文摘要 | 人类查看治理建议和健康分析。 |
+| 默认英文摘要 | 人类查看治理建议和健康分析。 |
 | `--format json` | 机器解析治理结果。 |
 
 ## 边界

@@ -7,7 +7,7 @@
 ## 怎么读
 
 - 第一次使用：先看 [`doctor`](./doctor.md)、[`quickstart`](./quickstart.md)、[`today`](./today.md)、[`next`](./next.md) 和 [`review`](./review.md)。
-- 要接入 Agent 或脚本：先看 [`agent`](./agent.md)，普通命令优先使用已实现的 `--format json` 或命令专属机器输出，不要解析中文 human output。
+- 要接入 Agent 或脚本：先看 [`agent`](./agent.md)，普通命令优先使用已实现的 `--json`、`--agent`、`--format json` 或命令专属机器输出，不要解析 human output。
 - 要新增或重写命令文档：先看 [命令文档预设](./preset-template.md)。
 - 只想查当前参数：运行 `taskbridge <command> --help`，help 是当前实现的事实来源。
 
@@ -54,12 +54,12 @@
 
 | 模式 | 用途 |
 | --- | --- |
-| 默认中文摘要 | 人类操作，快速扫状态、重点、风险和推荐下一步。 |
+| 默认英文摘要 | 人类操作，快速扫状态、重点、风险和推荐下一步。 |
 | `--format json` | Agent、CI、脚本读取稳定 JSON；仅适用于 help 中声明该 flag 的命令。 |
 | `taskbridge version --json` | 版本命令的专属 JSON 输出。 |
 | `taskbridge agent *` | Agent 安全入口，stdout 是 `taskbridge.agent-result.v1` JSON。 |
 
-机器模式不能混入进度条、中文提示、ANSI 或日志。stderr 只放脱敏诊断。
+机器模式不能混入进度条、人类提示、ANSI 或日志。stderr 只放脱敏诊断。
 
 ## 写入规则
 
@@ -70,4 +70,3 @@
 | Provider 写入 | `sync push`、项目同步到 Provider | 必须经过 Provider 接口；危险写入需要 dry-run/confirm/audit。 |
 | Agent 写入 | `agent execute --confirm` | 只执行 action file；无确认时不能写。 |
 | OpenSpec 信号 | `today`、`next --source openspec`、`review --source openspec` | 首阶段只读，不新增 `taskbridge openspec *` wrapper，不写 OpenSpec 文件。 |
-

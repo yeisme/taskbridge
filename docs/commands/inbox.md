@@ -35,7 +35,7 @@ taskbridge inbox --format json
 
 | 模式 | 用途 |
 | --- | --- |
-| 默认中文短列表 | 快速浏览待整理任务。 |
+| 默认英文短列表 | 快速浏览待整理任务。 |
 | `--format json` | 输出 `taskbridge.inbox.v1` 结构。 |
 
 ## 边界

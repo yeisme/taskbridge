@@ -1,9 +1,6 @@
-# go-dev-toolchain Specification
+## MODIFIED Requirements
 
-## Purpose
-Defines TaskBridge Go development toolchain requirements for local development, quality gates, build output, release checks, and optional hot reload.
-## Requirements
-### Requirement: Go development toolchain SHALL be standardized
+### Requirement: Go 开发工具链标准化落地
 TaskBridge SHALL implement the root Go development toolchain baseline with golangci-lint v2 configuration, aligned Taskfile task semantics, reproducible build output, release checks, and optional hot reload.
 
 #### Scenario: lint configuration covers the baseline

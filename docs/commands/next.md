@@ -34,7 +34,7 @@ taskbridge next --format json
 
 | 模式 | 用途 |
 | --- | --- |
-| 默认中文短列表 | 快速扫推荐和下一步。 |
+| 默认英文短列表 | 快速扫推荐和下一步。 |
 | `--format json` | 输出 `taskbridge.next.v1` 结构。 |
 
 ## 边界

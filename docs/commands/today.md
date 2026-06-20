@@ -35,7 +35,7 @@ taskbridge today --source openspec
 
 | 模式 | 用途 |
 | --- | --- |
-| 默认中文摘要 | 突出状态、重点、风险和推荐下一步。 |
+| 默认英文摘要 | 突出状态、重点、风险和推荐下一步。 |
 | `--format json` | 输出 `taskbridge.today.v1` 结构。 |
 
 ## 边界

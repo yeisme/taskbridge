@@ -30,7 +30,7 @@ taskbridge <command> <subcommand> --json
 
 ## 输出模式
 
-- 默认 human summary：中文，适合人读。
+- 默认 human summary：英文，适合人读。
 - `--json` / `--format json`：机器解析，不混入日志。
 - `--agent`：如支持，输出稳定 key=value。
 
@@ -47,4 +47,3 @@ taskbridge <command> <subcommand> --json
 - 每个文档必须列出当前实现的主要子命令或说明该命令没有子命令。
 - 新增 Cobra root command 时，同一个 change 必须更新 `docs/commands/README.md` 和对应命令页。
 - 行为变更时，命令页必须同步更新输出模式、写入边界和常用流程。
-
