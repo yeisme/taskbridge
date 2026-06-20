@@ -23,13 +23,13 @@ Example:
 func buildVersionProjection() clioutput.Projection {
 	p := clioutput.New("version.show")
 	p.Summary = "TaskBridge - Local task execution control plane"
-	p.Facts["version"] = buildinfo.Version
+	p.Facts["version"] = buildinfo.EffectiveVersion()
 	p.Facts["git_commit"] = buildinfo.GitCommit
 	p.Facts["build_date"] = buildinfo.BuildDate
 	p.Facts["go_version"] = runtime.Version()
 	p.Facts["platform"] = runtime.GOOS + "/" + runtime.GOARCH
 	p.Data = map[string]any{
-		"version":    buildinfo.Version,
+		"version":    buildinfo.EffectiveVersion(),
 		"git_commit": buildinfo.GitCommit,
 		"build_date": buildinfo.BuildDate,
 		"go_version": runtime.Version(),

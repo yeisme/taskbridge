@@ -42,7 +42,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:     "taskbridge",
 	Short:   "Local task execution control plane for humans and agents",
-	Version: buildinfo.Version,
+	Version: buildinfo.EffectiveVersion(),
 	Long: `TaskBridge is a local task execution control plane shared by humans and agents.
 It connects multiple Todo platforms and AI to unify task models, synchronization,
 and safe execution workflows.
