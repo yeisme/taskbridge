@@ -91,13 +91,16 @@ func TestMockServiceToday(t *testing.T) {
 		t.Errorf("expected status ok, got %q", result.Status)
 	}
 
-	// Should have must_do section with tasks (today + overdue)
-	mustDo := sectionByID(result.Sections, "must_do")
-	if mustDo == nil {
-		t.Fatal("expected must_do section")
+	// Should have recommended_next section with tasks (today + overdue)
+	recommended := sectionByID(result.Sections, "recommended_next")
+	if recommended == nil {
+		t.Fatal("expected recommended_next section")
 	}
-	if len(mustDo.Tasks) == 0 {
-		t.Error("expected at least one must_do task")
+	if len(recommended.Tasks) == 0 {
+		t.Error("expected at least one recommended task")
+	}
+	if sectionByID(result.Sections, "work") == nil || sectionByID(result.Sections, "life") == nil {
+		t.Fatalf("expected work and life sections: %+v", result.Sections)
 	}
 
 	// Should have suggested actions for overdue tasks

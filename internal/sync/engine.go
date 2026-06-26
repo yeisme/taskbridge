@@ -361,6 +361,7 @@ func (e *Engine) sameTaskContent(localTask, remoteTask *model.Task) bool {
 		localTask.Status != remoteTask.Status ||
 		localTask.ListID != remoteTask.ListID ||
 		localTask.ListName != remoteTask.ListName ||
+		localTask.Domain != remoteTask.Domain ||
 		localTask.Source != remoteTask.Source ||
 		localTask.SourceRawID != remoteTask.SourceRawID ||
 		localTask.Priority != remoteTask.Priority ||

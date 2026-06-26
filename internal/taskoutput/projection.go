@@ -34,6 +34,7 @@ type TaskProjection struct {
 	DueDate       string   `json:"due_date,omitempty"`
 	Tags          []string `json:"tags,omitempty"`
 	Source        string   `json:"source"`
+	Domain        string   `json:"domain"`
 	ListID        string   `json:"list_id,omitempty"`
 	ListName      string   `json:"list_name,omitempty"`
 	Progress      int      `json:"progress,omitempty"`
@@ -169,6 +170,7 @@ func ToTaskProjection(t model.Task) TaskProjection {
 		DueDate:       dueDate,
 		Tags:          t.Tags,
 		Source:        string(t.Source),
+		Domain:        string(model.NormalizeTaskDomain(t.Domain)),
 		ListID:        t.ListID,
 		ListName:      t.ListName,
 		Progress:      t.Progress,

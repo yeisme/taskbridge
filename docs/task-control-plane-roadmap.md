@@ -187,8 +187,8 @@ taskbridge today --format json
 
 | 命令 | 作用 |
 | --- | --- |
-| `today` | 每日任务工作台，聚合今日、逾期、风险、项目下一步、同步健康 |
-| `next` | 给出当前最值得推进的 1-5 个任务 |
+| `today` | 跨 Provider daily hub，聚合 Work、Life、Inbox、Overdue、Recommended next、Sync warnings |
+| `next` | 给出当前最值得推进的 3-5 个跨 Provider 任务 |
 | `inbox` | 列出无项目、无日期、无下一步归属的待整理任务 |
 | `review` | 任务健康复盘，只输出建议，不默认写入 |
 | `sync pull` | 从 Provider 拉取到本地，仍按现有能力执行 |
@@ -201,28 +201,29 @@ taskbridge today --format json
   "date": "2026-04-30",
   "status": "ok",
   "summary": {
-    "must_do": 4,
+    "work": 4,
+    "life": 2,
     "overdue": 7,
-    "at_risk": 3,
     "inbox": 9,
+    "recommended": 5,
     "project_next": 2,
     "sync_warnings": 1
   },
   "sections": [
     {
-      "id": "must_do",
-      "title": "今日必须做",
-      "tasks": ["task_1", "task_2"]
+      "id": "work",
+      "title": "Work",
+      "tasks": [{"id": "task_1", "source": "todoist", "domain": "work"}]
     },
     {
-      "id": "at_risk",
-      "title": "即将失控",
-      "tasks": ["task_3"]
+      "id": "life",
+      "title": "Life",
+      "tasks": [{"id": "task_2", "source": "google", "domain": "life"}]
     },
     {
-      "id": "next",
-      "title": "建议下一步",
-      "tasks": ["task_4", "task_5"]
+      "id": "recommended_next",
+      "title": "Recommended next",
+      "tasks": [{"id": "task_4", "source": "microsoft", "domain": "work"}]
     }
   ],
   "suggested_actions": [

@@ -159,9 +159,10 @@ spec_version=1.0
 mode=agent
 command=today.view
 status=partial
-fact.must_do=3
+fact.work=3
+fact.life=2
 fact.overdue=1
-fact.at_risk=2
+fact.recommended=5
 action.review="taskbridge review"
 evidence.date=2026-06-08
 ```
@@ -185,11 +186,12 @@ evidence.date=2026-06-08
   "mode": "json",
   "command": "today.view",
   "status": "partial",
-  "summary": "今日可执行，有 1 个逾期风险",
+  "summary": "Daily hub generated with one overdue risk.",
   "facts": {
-    "must_do": 3,
+    "work": 3,
+    "life": 2,
     "overdue": 1,
-    "at_risk": 2
+    "recommended": 5
   },
   "actions": [
     {
@@ -219,11 +221,11 @@ evidence.date=2026-06-08
 格式：
 
 ```text
-结论：建议先处理 mock_overdue，再进入今日重点任务。
-证据：mock_overdue 已逾期 2 天；must_do=3；at_risk=2。
-置信度：0.82
-风险：推迟决策会继续污染 today 列表。
-推荐下一步：taskbridge review
+Conclusion: Review mock_overdue before direct task mutation.
+Evidence: mock_overdue is overdue by 2 days; work=3; life=2; recommended=5.
+Confidence: 0.82
+Risk: Delaying review leaves stale overdue work in the daily hub.
+Recommended next step: taskbridge review
 ```
 
 适用命令：

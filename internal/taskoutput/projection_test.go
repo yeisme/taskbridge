@@ -45,6 +45,9 @@ func TestToTaskProjection_BasicFields(t *testing.T) {
 	if p.Source != "local" {
 		t.Errorf("Source = %q, want %q", p.Source, "local")
 	}
+	if p.Domain != "unknown" {
+		t.Errorf("Domain = %q, want %q", p.Domain, "unknown")
+	}
 	if p.DueDate != now.Format("2006-01-02") {
 		t.Errorf("DueDate = %q, want %q", p.DueDate, now.Format("2006-01-02"))
 	}
@@ -65,6 +68,14 @@ func TestToTaskProjection_BasicFields(t *testing.T) {
 	}
 	if p.PriorityScore != 80 {
 		t.Errorf("PriorityScore = %d, want 80", p.PriorityScore)
+	}
+}
+
+func TestToTaskProjection_ExplicitDomain(t *testing.T) {
+	task := model.Task{ID: "task-domain", Title: "Domain task", Status: model.StatusTodo, Source: model.SourceTodoist, Domain: model.DomainWork}
+	p := ToTaskProjection(task)
+	if p.Domain != "work" {
+		t.Fatalf("Domain = %q, want work", p.Domain)
 	}
 }
 

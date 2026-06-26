@@ -96,7 +96,7 @@ tasks:
         set -eu
         run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
         dir="temp/integration-test-runs/$run_id"
-        command="go test ./cmd -run 'Output|Provider|Auth|List|Config|Version|DemoToday|Doctor|Quickstart|Contract|Audit|AgentExecute' -count=1"
+        command="go test ./cmd -run 'Output|Provider|Auth|List|Config|Version|DemoToday|DailyHub|Doctor|Quickstart|Contract|Audit|AgentExecute|SyncPullAll' -count=1"
         mkdir -p "$dir/artifacts"
         printf '%s\n' "$command" > "$dir/command.txt"
         python3 -c 'import json, os, sys; keys=("GOOS","GOARCH","TASKBRIDGE_HOME","TASKBRIDGE_STORAGE_PATH","NO_COLOR"); json.dump({k: os.environ.get(k, "") for k in keys}, open(sys.argv[1], "w"), ensure_ascii=False, indent=2)' "$dir/env.json"

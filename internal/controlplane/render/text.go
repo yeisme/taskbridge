@@ -29,7 +29,7 @@ func Today(result *controlplane.TodayResult) string {
 
 	if len(result.ProjectNext) > 0 {
 		sb.WriteString("\n")
-		fprintf(&sb, "%s\n", ui.Bold("项目下一步"))
+		fprintf(&sb, "%s\n", ui.Bold("Project next steps"))
 		for _, item := range result.ProjectNext {
 			fprintf(&sb, "  %s  %s\n", ui.Highlight(item.ProjectName), ui.Dim(item.NextTaskID))
 		}
@@ -44,17 +44,17 @@ func Today(result *controlplane.TodayResult) string {
 	sb.WriteString("\n")
 	fprintf(&sb, "%s\n", ui.Divider())
 	parts := []string{}
-	if v, ok := result.Summary["must_do"]; ok {
-		parts = append(parts, fmt.Sprintf("必做 %d", v))
+	if v, ok := result.Summary["work"]; ok {
+		parts = append(parts, fmt.Sprintf("work %d", v))
 	}
 	if v, ok := result.Summary["overdue"]; ok && v > 0 {
-		parts = append(parts, fmt.Sprintf("逾期 %d", v))
+		parts = append(parts, fmt.Sprintf("overdue %d", v))
 	}
-	if v, ok := result.Summary["at_risk"]; ok {
-		parts = append(parts, fmt.Sprintf("风险 %d", v))
+	if v, ok := result.Summary["life"]; ok {
+		parts = append(parts, fmt.Sprintf("life %d", v))
 	}
 	if v, ok := result.Summary["inbox"]; ok {
-		parts = append(parts, fmt.Sprintf("收件箱 %d", v))
+		parts = append(parts, fmt.Sprintf("inbox %d", v))
 	}
 	fprintf(&sb, "%s\n", ui.Dim("  "+strings.Join(parts, " · ")))
 	return sb.String()
@@ -89,12 +89,12 @@ func TaskLine(task controlplane.TaskRef, dateRef string) string {
 	var sb strings.Builder
 	fprintf(&sb, "  %s %s\n", priorityBullet(task.Priority), task.Title)
 
-	parts := []string{sourceBadge(task.Source)}
+	parts := []string{sourceBadge(task.Source), domainBadge(task.Domain)}
 	if task.Priority > 0 {
 		parts = append(parts, priorityLabel(task.Priority))
 	}
 	if task.Status == "in_progress" {
-		parts = append(parts, ui.Warning("进行中"))
+		parts = append(parts, ui.Warning("in progress"))
 	}
 	if task.DueDate != nil {
 		parts = append(parts, dueDateTag(task.DueDate, dateRef))
@@ -142,6 +142,13 @@ func sourceBadge(source string) string {
 	return ui.Dim(source)
 }
 
+func domainBadge(domain string) string {
+	if domain == "" {
+		domain = "unknown"
+	}
+	return ui.Dim(domain)
+}
+
 func dueDateTag(due *time.Time, dateRef string) string {
 	if due == nil {
 		return ""
@@ -159,7 +166,7 @@ func dueDateTag(due *time.Time, dateRef string) string {
 
 	if dueDay.Before(nowDay) {
 		days := int(nowDay.Sub(dueDay).Hours() / 24)
-		return ui.Error(fmt.Sprintf("⚠ 逾期 %d 天", days))
+		return ui.Error(fmt.Sprintf("overdue %d day(s)", days))
 	}
 	if dueDay.Equal(nowDay) {
 		return ui.Dim("due " + due.Format("15:04"))

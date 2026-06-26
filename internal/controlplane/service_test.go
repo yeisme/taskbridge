@@ -39,6 +39,7 @@ func TestTodayClassifiesTasksAndProjectNext(t *testing.T) {
 		Title:            "今天完成",
 		Status:           model.StatusTodo,
 		Source:           model.SourceLocal,
+		Domain:           model.DomainWork,
 		Priority:         model.PriorityHigh,
 		DueDate:          ptr(now),
 		CreatedAt:        now.Add(-24 * time.Hour),
@@ -51,6 +52,7 @@ func TestTodayClassifiesTasksAndProjectNext(t *testing.T) {
 		Title:     "逾期处理",
 		Status:    model.StatusTodo,
 		Source:    model.SourceLocal,
+		Domain:    model.DomainWork,
 		Priority:  model.PriorityMedium,
 		DueDate:   ptr(now.AddDate(0, 0, -2)),
 		CreatedAt: now.AddDate(0, 0, -3),
@@ -73,14 +75,82 @@ func TestTodayClassifiesTasksAndProjectNext(t *testing.T) {
 	if result.Schema != SchemaToday || result.Status != "ok" {
 		t.Fatalf("unexpected envelope: %+v", result)
 	}
-	if result.Summary["must_do"] != 2 || result.Summary["overdue"] != 1 || result.Summary["inbox"] != 1 {
+	if result.Summary["work"] != 2 || result.Summary["overdue"] != 1 || result.Summary["inbox"] != 1 {
 		t.Fatalf("unexpected summary: %+v", result.Summary)
+	}
+	for _, id := range []string{"work", "life", "inbox", "overdue", "recommended_next", "sync_warnings"} {
+		if sectionByID(result.Sections, id) == nil {
+			t.Fatalf("missing today section %q in %+v", id, result.Sections)
+		}
 	}
 	if len(result.ProjectNext) != 1 || result.ProjectNext[0].ProjectID != projectID {
 		t.Fatalf("expected project next for %s, got %+v", projectID, result.ProjectNext)
 	}
 	if len(result.SuggestedActions) != 1 || result.SuggestedActions[0].TaskID != "overdue" {
 		t.Fatalf("expected overdue suggested action, got %+v", result.SuggestedActions)
+	}
+}
+
+func TestDomainClassificationExplicitBeatsInferenceAndLegacyIsUnknown(t *testing.T) {
+	ctx := context.Background()
+	taskStore, err := filestore.New(t.TempDir(), "json")
+	if err != nil {
+		t.Fatalf("filestore.New: %v", err)
+	}
+	now := time.Date(2026, 4, 30, 10, 0, 0, 0, time.Local)
+	saveTask(t, taskStore, &model.Task{ID: "life-explicit", Title: "Family launch meeting", Status: model.StatusTodo, Source: model.SourceTodoist, Domain: model.DomainLife, ListName: "Work launch", DueDate: ptr(now), CreatedAt: now, UpdatedAt: now})
+	saveTask(t, taskStore, &model.Task{ID: "legacy", Title: "Legacy task", Status: model.StatusTodo, Source: model.SourceGoogle, DueDate: ptr(now), CreatedAt: now, UpdatedAt: now})
+
+	result, err := (&Service{TaskStore: taskStore}).Today(ctx, Options{Now: now})
+	if err != nil {
+		t.Fatalf("Today: %v", err)
+	}
+	life := sectionByID(result.Sections, "life")
+	if life == nil || len(life.Tasks) != 1 || life.Tasks[0].ID != "life-explicit" || life.Tasks[0].Domain != "life" {
+		t.Fatalf("explicit life domain should beat work-looking list: %+v", life)
+	}
+	recommended := sectionByID(result.Sections, "recommended_next")
+	if recommended == nil {
+		t.Fatal("missing recommended_next section")
+	}
+	foundLegacy := false
+	for _, task := range recommended.Tasks {
+		if task.ID == "legacy" {
+			foundLegacy = true
+			if task.Domain != "unknown" || task.Source != "google" {
+				t.Fatalf("legacy task metadata = %+v, want unknown domain and google source", task)
+			}
+		}
+	}
+	if !foundLegacy {
+		t.Fatalf("legacy task should remain visible in recommendations: %+v", recommended.Tasks)
+	}
+}
+
+func TestNextReasonsIncludeDomainSourceProjectAndSyncRisk(t *testing.T) {
+	ctx := context.Background()
+	taskStore, err := filestore.New(t.TempDir(), "json")
+	if err != nil {
+		t.Fatalf("filestore.New: %v", err)
+	}
+	now := time.Date(2026, 4, 30, 10, 0, 0, 0, time.Local)
+	saveTask(t, taskStore, &model.Task{ID: "risky", Title: "Resolve launch conflict", Status: model.StatusTodo, Source: model.SourceTodoist, Domain: model.DomainWork, Priority: model.PriorityHigh, DueDate: ptr(now), CreatedAt: now, UpdatedAt: now, Metadata: &model.TaskMetadata{CustomFields: map[string]interface{}{"tb_project_id": "proj_launch", "tb_sync_state": "conflict"}}})
+
+	result, err := (&Service{TaskStore: taskStore}).Next(ctx, Options{Now: now})
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if len(result.Tasks) != 1 {
+		t.Fatalf("expected one recommendation, got %+v", result.Tasks)
+	}
+	task := result.Tasks[0]
+	for _, want := range []string{"due today", "domain work", "source todoist", "project proj_launch", "sync risk"} {
+		if !strings.Contains(task.Reason, want) {
+			t.Fatalf("recommendation reason missing %q: %+v", want, task)
+		}
+	}
+	if task.NextAction != "review_sync_state" {
+		t.Fatalf("sync-risk task next_action = %q, want review_sync_state", task.NextAction)
 	}
 }
 
@@ -134,6 +204,12 @@ func TestReviewSuggestsSplittingLargeTasks(t *testing.T) {
 	}
 	if result.Summary["large"] != 1 {
 		t.Fatalf("expected one large task, got %+v", result.Summary)
+	}
+	if _, ok := result.Summary["unknown_domain"]; !ok {
+		t.Fatalf("review summary should include unknown_domain: %+v", result.Summary)
+	}
+	if _, ok := result.Summary["providers"]; !ok {
+		t.Fatalf("review summary should include provider health: %+v", result.Summary)
 	}
 	if len(result.SuggestedActions) != 1 || result.SuggestedActions[0].Type != "split_task" {
 		t.Fatalf("expected split action, got %+v", result.SuggestedActions)

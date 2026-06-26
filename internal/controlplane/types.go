@@ -22,6 +22,7 @@ type TaskRef struct {
 	Title            string     `json:"title"`
 	Status           string     `json:"status"`
 	Source           string     `json:"source"`
+	Domain           string     `json:"domain"`
 	ListID           string     `json:"list_id,omitempty"`
 	ListName         string     `json:"list_name,omitempty"`
 	Priority         int        `json:"priority,omitempty"`
@@ -29,6 +30,8 @@ type TaskRef struct {
 	DueDate          *time.Time `json:"due_date,omitempty"`
 	EstimatedMinutes int        `json:"estimated_minutes,omitempty"`
 	ProjectID        string     `json:"project_id,omitempty"`
+	SyncState        string     `json:"sync_state,omitempty"`
+	NextAction       string     `json:"next_action,omitempty"`
 	Reason           string     `json:"reason,omitempty"`
 }
 

@@ -44,6 +44,37 @@ func TestTodayJSONContract(t *testing.T) {
 	if envelope["mode"] != "json" {
 		t.Fatalf("mode = %v, want json", envelope["mode"])
 	}
+	data, ok := envelope["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("today --json data missing or wrong type: %#v", envelope["data"])
+	}
+	sections, ok := data["sections"].([]interface{})
+	if !ok {
+		t.Fatalf("today --json sections missing: %#v", data)
+	}
+	seen := map[string]bool{}
+	for _, raw := range sections {
+		section, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		id, _ := section["id"].(string)
+		seen[id] = true
+		if tasks, ok := section["tasks"].([]interface{}); ok && len(tasks) > 0 {
+			task, _ := tasks[0].(map[string]interface{})
+			if _, ok := task["source"]; !ok {
+				t.Fatalf("task entry missing source metadata: %#v", task)
+			}
+			if _, ok := task["domain"]; !ok {
+				t.Fatalf("task entry missing domain metadata: %#v", task)
+			}
+		}
+	}
+	for _, id := range []string{"work", "life", "inbox", "overdue", "recommended_next", "sync_warnings"} {
+		if !seen[id] {
+			t.Fatalf("today --json missing section %q in %#v", id, seen)
+		}
+	}
 }
 
 // TestTodayAgentContract verifies today --agent produces stable key=value.
@@ -101,7 +132,7 @@ func TestNextAgentContract(t *testing.T) {
 		return runNext(nil, nil)
 	})
 
-	for _, want := range []string{"spec_version=", "mode=agent", "status="} {
+	for _, want := range []string{"spec_version=", "mode=agent", "status=", "fact.recommendation.1.source=", "fact.recommendation.1.domain="} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("next --agent must contain %q:\n%s", want, output)
 		}

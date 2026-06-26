@@ -1,12 +1,12 @@
 # review 命令
 
-`taskbridge review` 做任务健康复盘，输出风险、建议动作和后续 action file 入口。它默认只建议不写入，是"只看不动"的安全入口。
+`taskbridge review` 做一周视角的任务健康复盘，输出 work/life 覆盖率、unknown-domain backlog、逾期积压、Provider sync health、建议动作和后续 action file 入口。它默认只建议不写入，是"只看不动"的安全入口。
 
 ## 什么时候用
 
 适合用 `review` 的情况：
 
-- 想做任务健康检查，看看有哪些风险任务。
+- 想做任务健康检查，看看 work/life 覆盖、未知 domain 和逾期积压。
 - 想生成建议动作但不立即执行。
 - 想通过 action file 批量处理风险任务。
 
@@ -27,7 +27,7 @@
 ```bash
 taskbridge review
 taskbridge review --format json
-taskbridge review --source openspec
+taskbridge sync pull --all && taskbridge review
 ```
 
 ### 生成并执行动作
@@ -44,13 +44,14 @@ taskbridge review --apply-file actions.json --confirm
 | 模式 | 用途 |
 | --- | --- |
 | 默认英文复盘摘要 | 人类查看风险和建议动作。 |
-| `--format json` | 输出 `taskbridge.review.v1` 或 action execution result。 |
+| `--format json` / `--json` | 输出 AI-native envelope，`data` 内含 `taskbridge.review.v1` 或 action execution result。 |
+| `--agent` | 输出低 token key=value facts。 |
 
 ## 边界
 
 - 不带 `--apply-file` 时只读，不写任务。
 - `--apply-file` 必须显式 `--dry-run` 或 `--confirm`。
-- `--source openspec` 只分析 OpenSpec 信号，不写 OpenSpec 文件。
+- review 的建议动作不会隐式写入；写回仍走 action file 的 dry-run/confirm gate。
 
 ## 常见错误
 

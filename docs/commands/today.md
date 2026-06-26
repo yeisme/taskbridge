@@ -1,13 +1,13 @@
 # today 命令
 
-`taskbridge today` 是每日任务工作台。它把今日必须做、即将失控、建议下一步、项目下一步和后续 OpenSpec 工程信号放在一个默认入口里。
+`taskbridge today` 是跨 Todo 软件的 daily hub。它把所有已同步 Provider 的任务按 Work、Life、Inbox、Overdue、Recommended next 和 Sync warnings 汇总，让用户不必分别打开多个 Todo app 才知道今天该做什么。
 
 ## 什么时候用
 
 适合用 `today` 的情况：
 
-- 每日开始工作时想快速了解今天该做什么。
-- 想在一个入口看到今日任务、风险和推荐下一步。
+- 每日开始工作时想快速了解工作和生活任务的整体状态。
+- 想在一个入口看到跨 Provider 任务、风险和推荐下一步。
 - 想用 mock 数据体验 TaskBridge 功能。
 
 不适合用 `today` 的情况：
@@ -25,30 +25,32 @@
 ```bash
 taskbridge today
 taskbridge today --json
+taskbridge sync pull --all && taskbridge today
 taskbridge today --source microsoft
-taskbridge today --source openspec
 ```
 
-`--mock` 使用内置模拟数据（保留给测试和兼容路径）；新用户应使用 `taskbridge demo today` 体验控制面。`--source openspec` 在 today 视图中加入 OpenSpec 工程任务信号。
+`--mock` 使用内置模拟数据（保留给测试和兼容路径）；新用户应使用 `taskbridge demo today` 体验控制面。真实日常路径建议先运行 `taskbridge sync pull --all`，再运行 `taskbridge today`。
 
 ## 输出模式
 
 | 模式 | 用途 |
 | --- | --- |
 | 默认英文摘要 | 突出状态、重点、风险和推荐下一步。 |
-| `--format json` | 输出 `taskbridge.today.v1` 结构。 |
+| `--format json` / `--json` | 输出 AI-native envelope，`data` 内含 `taskbridge.today.v1`。 |
+| `--agent` | 输出低 token key=value facts，供 Agent 和 shell glue 使用。 |
 
 ## 边界
 
 - 只读命令，不写本地 storage，不调用远端写 API。
 - `--mock` 使用内置模拟数据，不读取真实 token 或任务。
-- `--source openspec` 只消费 OpenSpec 信号，不新增 `taskbridge openspec *` wrapper。
+- `domain` 是任务上下文，合法值为 `work`、`life`、`personal`、`unknown`；不会替代 `source`、`provider`、`list_id` 或远端 ID。
+- 旧任务缺少 domain 时仍会显示，并在 JSON/agent 输出里渲染为 `unknown`。
 
 ## 常见错误
 
 | 错误 | 原因 | 处理 |
 | --- | --- | --- |
-| 无任务 | 本地 storage 为空。 | 先运行 `sync pull <provider>` 拉取任务。 |
+| 无任务 | 本地 storage 为空。 | 先运行 `taskbridge sync pull --all` 拉取任务。 |
 | Provider 未认证 | 指定了 `--source` 但未登录。 | 先运行 `auth login <provider>`。 |
 
 ## 最短可用流程

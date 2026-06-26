@@ -4,24 +4,21 @@
 定义 TaskBridge 控制面和 agent 命令的机器可读输出、错误 exit code、能力声明和 schema 索引要求，确保 agent 只依赖稳定协议而不是人类摘要。
 ## Requirements
 ### Requirement: Control-plane commands SHALL support explicit machine output modes
-TaskBridge SHALL render control-plane command results from one projection into human summary, `--json`, `--agent`, and legacy `--format json` modes.
+TaskBridge SHALL render control-plane command results from one projection into human summary, `--json`, `--agent`, and legacy `--format json` modes, including cross-provider source/domain metadata needed by agents and scripts.
 
 #### Scenario: json mode emits one envelope object
 - **WHEN** the operator runs `taskbridge today --json`
 - **THEN** stdout SHALL contain exactly one JSON object
 - **AND** the object SHALL include `spec_version`, `mode`, `command`, `status`, and command-specific data
+- **AND** cross-provider task entries SHALL expose stable source and domain metadata when present
 - **AND** stderr SHALL contain diagnostics only, never JSON payload fragments required for parsing
 
 #### Scenario: agent mode emits low-token key value facts
 - **WHEN** the operator runs `taskbridge next --agent`
 - **THEN** stdout SHALL contain stable `key=value` lines
-- **AND** it SHALL include `spec_version`, `mode=agent`, `command`, and `status`
+- **AND** it SHALL include `spec_version`, `mode=agent`, `command`, `status`, and bounded recommendation facts
+- **AND** it SHALL include enough source/domain context for an agent to explain why a recommendation spans work or life
 - **AND** it SHALL NOT include ANSI, tables, localized prose paragraphs, raw prompts, Provider payloads, or debug dumps
-
-#### Scenario: legacy format json remains parseable
-- **WHEN** the operator runs `taskbridge review --format json`
-- **THEN** stdout SHALL remain parseable as one JSON object
-- **AND** TaskBridge SHALL NOT append human hints, pagination text, logs, or progress after the JSON payload
 
 ### Requirement: Agent commands SHALL keep machine stdout and correct exit status
 TaskBridge agent commands SHALL always return machine-readable stdout and SHALL use exit codes that reflect success, confirmation-required, partial, or failed execution consistently.

@@ -241,6 +241,7 @@ func buildTodayProjection(result *controlplane.TodayResult) clioutput.Projection
 		p.Facts["sections"] = len(result.Sections)
 		p.Facts["suggested_actions"] = len(result.SuggestedActions)
 		p.Risks = append(p.Risks, result.Warnings...)
+		p.Actions = append(p.Actions, clioutput.Action{Name: "next", Command: "taskbridge next"})
 		if len(result.SuggestedActions) > 0 {
 			p.Actions = append(p.Actions, clioutput.Action{Name: "review", Command: "taskbridge review"})
 		}
@@ -265,6 +266,22 @@ func buildTaskListProjection(title string, result *controlplane.ListResult) clio
 		p.Status = cliStatusFromString(result.Status)
 		p.Facts["count"] = result.Count
 		p.Risks = append(p.Risks, result.Warnings...)
+		if result.Schema == controlplane.SchemaNext {
+			p.Facts["recommendations"] = result.Count
+			for i, task := range result.Tasks {
+				if i >= 5 {
+					break
+				}
+				prefix := fmt.Sprintf("recommendation.%d", i+1)
+				p.Facts[prefix+".id"] = task.ID
+				p.Facts[prefix+".source"] = task.Source
+				p.Facts[prefix+".domain"] = task.Domain
+				p.Facts[prefix+".action"] = task.NextAction
+			}
+		}
+	}
+	if result != nil && result.Schema == controlplane.SchemaNext {
+		p.Actions = append(p.Actions, clioutput.Action{Name: "review", Command: "taskbridge review"})
 	}
 	p.Data = result
 	return p
@@ -365,9 +382,9 @@ func appendTaskRefsTable(b *strings.Builder, tasks []controlplane.TaskRef) {
 		b.WriteString("No tasks found.\n")
 		return
 	}
-	table := ui.NewTable("Task", "Title", "Status", "Priority", "Source", "Reason")
+	table := ui.NewTable("Task", "Title", "Status", "Priority", "Source", "Domain", "Reason")
 	for _, task := range tasks {
-		table.AddRow(task.ID, task.Title, task.Status, fmt.Sprint(task.Priority), task.Source, task.Reason)
+		table.AddRow(task.ID, task.Title, task.Status, fmt.Sprint(task.Priority), task.Source, task.Domain, task.Reason)
 	}
 	b.WriteString(table.Render())
 	b.WriteString("\n")

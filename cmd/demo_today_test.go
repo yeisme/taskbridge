@@ -52,8 +52,8 @@ func TestDemoTodayJSONParses(t *testing.T) {
 	if len(envelope.Data.Sections) == 0 {
 		t.Fatal("demo today should include at least one section")
 	}
-	if envelope.Data.Summary["must_do"] == 0 {
-		t.Fatal("demo today should include must_do summary count")
+	if envelope.Data.Summary["recommended"] == 0 {
+		t.Fatal("demo today should include recommended summary count")
 	}
 }
 

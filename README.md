@@ -2,11 +2,20 @@
 
 <div align="center">
 
-**Local task execution control plane for humans and agents**
+**CLI command center for all Todo apps**
 
 </div>
 
 ---
+
+TaskBridge brings Microsoft Todo, Todoist, Feishu Tasks, TickTick, Dida365, Google Tasks, and local tasks into one CLI daily hub. The main path is pull every authenticated provider, inspect today's work/life split, choose the next bounded recommendation, then write back only through explicit sync or action-file confirmation.
+
+```bash
+taskbridge sync pull --all
+taskbridge today
+taskbridge next
+taskbridge review
+```
 
 ## Local Workflow
 
@@ -62,6 +71,14 @@ taskbridge quickstart
 taskbridge demo today
 ```
 
+After authenticating providers, use the daily hub path:
+
+```bash
+taskbridge sync pull --all
+taskbridge today
+taskbridge next
+```
+
 ### Provider Authentication
 
 ```bash
@@ -105,8 +122,10 @@ taskbridge task undo <task-id>
 
 ```bash
 taskbridge sync pull microsoft
+taskbridge sync pull --all
+taskbridge sync pull --all --dry-run --json
 taskbridge sync push todoist
-taskbridge sync bidirectional microsoft --target todoist
+taskbridge sync bidirectional microsoft --dry-run
 taskbridge sync status
 taskbridge sync diff microsoft --target todoist --format json
 taskbridge sync conflicts

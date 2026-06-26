@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/yeisme/taskbridge/internal/clioutput"
+	"github.com/yeisme/taskbridge/internal/loader"
 	"github.com/yeisme/taskbridge/internal/provider"
+	"github.com/yeisme/taskbridge/internal/storage"
 	"github.com/yeisme/taskbridge/internal/sync"
 	"github.com/yeisme/taskbridge/pkg/ui"
 )
@@ -34,14 +37,15 @@ Examples:
 
 // syncPullCmd pull command
 var syncPullCmd = &cobra.Command{
-	Use:   "pull <provider>",
+	Use:   "pull [provider]",
 	Short: "Pull tasks from remote to local",
-	Long: `Pull all tasks from the selected provider into local storage.
+	Long: `Pull tasks from one provider or all authenticated providers into local storage.
 
 Examples:
   taskbridge sync pull google
-  taskbridge sync pull google --dry-run`,
-	Args: cobra.ExactArgs(1),
+  taskbridge sync pull google --dry-run
+  taskbridge sync pull --all --dry-run`,
+	Args: validateSyncPullArgs,
 	RunE: runSyncPull,
 }
 
@@ -107,6 +111,7 @@ var (
 	syncInterval     time.Duration
 	syncOutput       string
 	syncDeleteRemote bool
+	syncAll          bool
 )
 
 func init() {
@@ -123,6 +128,7 @@ func init() {
 		cmd.Flags().BoolVar(&syncForce, "force", false, "Force sync, ignore conflict detection")
 		cmd.Flags().StringVarP(&syncOutput, "output", "o", "text", "Output format (text, json)")
 	}
+	syncPullCmd.Flags().BoolVar(&syncAll, "all", false, "Pull all authenticated providers and report per-provider status")
 	syncStatusCmd.Flags().StringVarP(&syncOutput, "output", "o", "text", "Output format (text, json)")
 
 	//Push/Bidirectional/Watch shared write-safety option
@@ -135,6 +141,19 @@ func init() {
 
 	//watch command options
 	syncWatchCmd.Flags().DurationVar(&syncInterval, "interval", 5*time.Minute, "synchronization interval")
+}
+
+func validateSyncPullArgs(_ *cobra.Command, args []string) error {
+	if syncAll {
+		if len(args) > 0 {
+			return usageError("sync pull --all does not accept a provider argument")
+		}
+		return nil
+	}
+	if len(args) != 1 {
+		return usageError("sync pull requires a provider unless --all is set")
+	}
+	return nil
 }
 
 // getSyncEngine gets the synchronization engine
@@ -159,6 +178,9 @@ func getSyncEngineForProvider(providerName string) (*sync.Engine, error) { //Par
 
 // runSyncPull executes pull
 func runSyncPull(cmd *cobra.Command, args []string) error {
+	if syncAll {
+		return runSyncPullAll(cmd, args)
+	}
 	providerName := provider.ResolveProviderName(args[0])
 	if err := ensureSyncProjectionMode(); err != nil {
 		return err
@@ -182,6 +204,207 @@ func runSyncPull(cmd *cobra.Command, args []string) error {
 	}
 
 	return printSyncResult(result)
+}
+
+type syncPullAllProviderResult struct {
+	Provider   string       `json:"provider"`
+	Status     string       `json:"status"`
+	DryRun     bool         `json:"dry_run"`
+	Pulled     int          `json:"pulled"`
+	Created    int          `json:"created"`
+	Updated    int          `json:"updated"`
+	Skipped    int          `json:"skipped"`
+	Conflicts  int          `json:"conflicts"`
+	Errors     []sync.Error `json:"errors,omitempty"`
+	NextAction string       `json:"next_action,omitempty"`
+}
+
+type syncPullAllReceipt struct {
+	Direction          sync.Direction              `json:"direction"`
+	DryRun             bool                        `json:"dry_run"`
+	ProvidersAttempted int                         `json:"providers_attempted"`
+	ProvidersSucceeded int                         `json:"providers_succeeded"`
+	ProvidersFailed    int                         `json:"providers_failed"`
+	ProvidersSkipped   int                         `json:"providers_skipped"`
+	Results            []syncPullAllProviderResult `json:"results"`
+	NextAction         string                      `json:"next_action"`
+}
+
+func runSyncPullAll(_ *cobra.Command, _ []string) error {
+	if err := ensureSyncProjectionMode(); err != nil {
+		return err
+	}
+	store, cleanup, err := getStore()
+	if err != nil {
+		return commandError("Failed to create storage", err)
+	}
+	defer cleanup()
+
+	loadResult := loadProvidersWithStatusFunc("")
+	receipt := aggregateSyncPullAll(context.Background(), loadResult, store)
+	projection := buildSyncPullAllProjection(receipt)
+	return printProjection(syncOutput, projection, func() { fmt.Print(renderSyncPullAll(projection)) })
+}
+
+func aggregateSyncPullAll(ctx context.Context, loadResult *loader.ProviderLoadResult, store storage.Storage) syncPullAllReceipt {
+	receipt := syncPullAllReceipt{Direction: sync.DirectionPull, DryRun: syncDryRun, Results: []syncPullAllProviderResult{}, NextAction: "taskbridge today"}
+	if loadResult == nil {
+		receipt.NextAction = "taskbridge auth status"
+		return receipt
+	}
+	names := syncPullAllProviderNames(loadResult)
+	engine := sync.NewEngine(loadResult.Providers, store)
+	for _, name := range names {
+		status := loadResult.Statuses[name]
+		if status == nil || !status.Authenticated {
+			receipt.ProvidersSkipped++
+			receipt.Results = append(receipt.Results, syncPullAllProviderResult{
+				Provider:   name,
+				Status:     "skipped",
+				DryRun:     syncDryRun,
+				Errors:     []sync.Error{{Operation: "load_provider", Error: safeProviderLoadError(name, status)}},
+				NextAction: providerNextAction(name),
+			})
+			continue
+		}
+
+		receipt.ProvidersAttempted++
+		result, err := engine.Sync(ctx, sync.Options{Direction: sync.DirectionPull, Provider: name, DryRun: syncDryRun, Force: syncForce})
+		providerResult := syncPullAllProviderResult{Provider: name, Status: "succeeded", DryRun: syncDryRun, NextAction: "taskbridge today"}
+		if result != nil {
+			providerResult.Pulled = result.Pulled
+			providerResult.Created = result.Pulled
+			providerResult.Updated = result.Updated
+			providerResult.Skipped = result.Skipped
+			providerResult.Errors = append(providerResult.Errors, result.Errors...)
+		}
+		if err != nil {
+			providerResult.Errors = append(providerResult.Errors, sync.Error{Operation: "pull", Error: err.Error()})
+		}
+		if len(providerResult.Errors) > 0 {
+			providerResult.Status = "failed"
+			providerResult.NextAction = providerNextAction(name)
+			receipt.ProvidersFailed++
+		} else {
+			receipt.ProvidersSucceeded++
+		}
+		receipt.Results = append(receipt.Results, providerResult)
+	}
+	if receipt.ProvidersAttempted == 0 {
+		receipt.NextAction = "taskbridge auth status"
+	} else if receipt.ProvidersFailed > 0 {
+		receipt.NextAction = "taskbridge sync status"
+	}
+	return receipt
+}
+
+func syncPullAllProviderNames(loadResult *loader.ProviderLoadResult) []string {
+	if enabled := enabledSyncProviderNames(); len(enabled) > 0 {
+		return enabled
+	}
+	seen := map[string]bool{}
+	for _, name := range provider.GetAllProviderNames() {
+		seen[name] = true
+	}
+	for name := range loadResult.Statuses {
+		seen[name] = true
+	}
+	for name := range loadResult.Providers {
+		seen[name] = true
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func enabledSyncProviderNames() []string {
+	if cfg == nil {
+		return nil
+	}
+	enabled := make([]string, 0, 6)
+	if cfg.Providers.Google.Enabled {
+		enabled = append(enabled, "google")
+	}
+	if cfg.Providers.Microsoft.Enabled {
+		enabled = append(enabled, "microsoft")
+	}
+	if cfg.Providers.Feishu.Enabled {
+		enabled = append(enabled, "feishu")
+	}
+	if cfg.Providers.TickTick.Enabled {
+		enabled = append(enabled, "ticktick")
+	}
+	if cfg.Providers.Dida.Enabled {
+		enabled = append(enabled, "dida")
+	}
+	if cfg.Providers.Todoist.Enabled {
+		enabled = append(enabled, "todoist")
+	}
+	sort.Strings(enabled)
+	return enabled
+}
+
+func safeProviderLoadError(name string, status *loader.ProviderLoadStatus) string {
+	if status != nil && status.Error != "" {
+		return status.Error
+	}
+	return fmt.Sprintf("provider %s is not authenticated", name)
+}
+
+func providerNextAction(name string) string {
+	if name == "" {
+		return "taskbridge auth status"
+	}
+	return "taskbridge provider test " + name
+}
+
+func buildSyncPullAllProjection(receipt syncPullAllReceipt) clioutput.Projection {
+	p := clioutput.New("sync.pull_all")
+	p.Summary = fmt.Sprintf("Sync pull all completed: %d succeeded, %d failed, %d skipped.", receipt.ProvidersSucceeded, receipt.ProvidersFailed, receipt.ProvidersSkipped)
+	if receipt.ProvidersFailed > 0 && receipt.ProvidersSucceeded > 0 {
+		p.Status = clioutput.StatusPartial
+	} else if receipt.ProvidersFailed > 0 && receipt.ProvidersSucceeded == 0 {
+		p.Status = clioutput.StatusFailed
+	}
+	p.Facts["direction"] = string(receipt.Direction)
+	p.Facts["dry_run"] = receipt.DryRun
+	p.Facts["providers_attempted"] = receipt.ProvidersAttempted
+	p.Facts["providers_succeeded"] = receipt.ProvidersSucceeded
+	p.Facts["providers_failed"] = receipt.ProvidersFailed
+	p.Facts["providers_skipped"] = receipt.ProvidersSkipped
+	p.Facts["provider_results"] = len(receipt.Results)
+	p.Data = receipt
+	p.Actions = append(p.Actions, clioutput.Action{Name: "next", Command: receipt.NextAction})
+	for _, result := range receipt.Results {
+		if result.Status == "failed" || result.Status == "skipped" {
+			p.Risks = append(p.Risks, fmt.Sprintf("%s %s", result.Provider, result.Status))
+		}
+	}
+	return p
+}
+
+func renderSyncPullAll(projection clioutput.Projection) string {
+	out := clioutput.RenderSummary(projection)
+	out += "\nProvider pull results\n\n"
+	table := ui.NewSimpleTable(
+		ui.Column{Header: "Provider", AlignLeft: true},
+		ui.Column{Header: "Status", AlignLeft: true},
+		ui.Column{Header: "Pulled", AlignRight: true},
+		ui.Column{Header: "Updated", AlignRight: true},
+		ui.Column{Header: "Skipped", AlignRight: true},
+		ui.Column{Header: "Errors", AlignRight: true},
+		ui.Column{Header: "Next action", AlignLeft: true},
+	)
+	if receipt, ok := projection.Data.(syncPullAllReceipt); ok {
+		for _, result := range receipt.Results {
+			table.AddRow(result.Provider, result.Status, fmt.Sprint(result.Pulled), fmt.Sprint(result.Updated), fmt.Sprint(result.Skipped), fmt.Sprint(len(result.Errors)), result.NextAction)
+		}
+	}
+	out += table.Render()
+	return out
 }
 
 // runSyncPush executes push

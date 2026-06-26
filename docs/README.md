@@ -2,13 +2,22 @@
 
 本目录是 TaskBridge 子项目的产品、设计、运行、协议、实现和 release 文档真源。根仓库只保留跨项目 handoff 和治理索引，不维护 TaskBridge 文档镜像。
 
-TaskBridge 是人和 Agent 共用的本地任务执行控制面：本地文件存储是默认运行时存储，Provider adapter 接入各 Todo 平台，Agent 通过 action file 安全执行写入。
+TaskBridge 是覆盖所有 Todo 软件的 CLI 任务中控台：本地文件存储是默认运行时存储，Provider adapter 接入 Microsoft Todo、Todoist、飞书任务、TickTick、滴答清单、Google Tasks 和本地任务，`today`/`next`/`review` 把工作与生活任务汇总成每日决策视图，Agent 通过 action file 安全执行写入。
 
 ## 当前状态
 
-- 当前阶段：本地任务管理、Provider 连接、同步引擎、项目规划、治理分析和 Agent 集成已落地。
+- 当前阶段：本地任务管理、Provider 连接、`sync pull --all` 聚合、跨 Provider daily hub、项目规划、治理分析和 Agent 集成已落地。
 - 当前实现边界：支持 Microsoft Todo、Google Tasks、飞书任务、TickTick、滴答清单、Todoist 六个 Provider；支持本地任务 CRUD、单向/双向同步、冲突处理、项目拆分、治理建议和 Agent 安全执行。OmniFocus 和 Apple Reminders 仍在计划中。
 - 用户可见命令使用 `taskbridge <command>` 统一入口；默认 human output 使用英文，Agent 和脚本应使用各命令 `--json`、`--agent`、`--events`、`--format json` 或 `taskbridge agent *` JSON，而不是解析 human output。
+
+核心日常路径：
+
+```bash
+taskbridge sync pull --all
+taskbridge today
+taskbridge next
+taskbridge review
+```
 
 ## 文档分区
 

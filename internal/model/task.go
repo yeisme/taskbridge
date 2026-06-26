@@ -37,6 +37,8 @@ type Task struct {
 	Tags []string `json:"tags,omitempty"`
 	// Categories 分类列表
 	Categories []string `json:"categories,omitempty"`
+	// Domain is the task's life context. Empty legacy values render as unknown in projections.
+	Domain TaskDomain `json:"domain,omitempty"`
 
 	// Quadrant 四象限分类
 	Quadrant Quadrant `json:"quadrant"`
@@ -112,6 +114,31 @@ const (
 	// SourceLocal 本地来源
 	SourceLocal TaskSource = "local"
 )
+
+// TaskDomain identifies the life context a task belongs to.
+type TaskDomain string
+
+const (
+	DomainWork     TaskDomain = "work"
+	DomainLife     TaskDomain = "life"
+	DomainPersonal TaskDomain = "personal"
+	DomainUnknown  TaskDomain = "unknown"
+)
+
+// NormalizeTaskDomain returns a stable domain, treating empty or invalid legacy values as unknown.
+func NormalizeTaskDomain(domain TaskDomain) TaskDomain {
+	switch domain {
+	case DomainWork, DomainLife, DomainPersonal, DomainUnknown:
+		return domain
+	default:
+		return DomainUnknown
+	}
+}
+
+// IsKnownTaskDomain reports whether the value is one of the stable non-empty domain values.
+func IsKnownTaskDomain(domain TaskDomain) bool {
+	return domain == DomainWork || domain == DomainLife || domain == DomainPersonal || domain == DomainUnknown
+}
 
 // TaskList 任务列表
 type TaskList struct {

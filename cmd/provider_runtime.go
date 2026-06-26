@@ -8,6 +8,8 @@ import (
 	"github.com/yeisme/taskbridge/internal/provider"
 )
 
+var loadProvidersWithStatusFunc = loadProvidersWithStatus
+
 func loadProvidersWithStatus(target string) *loader.ProviderLoadResult {
 	if target == "" {
 		return loader.LoadProviders(context.Background())
@@ -17,7 +19,7 @@ func loadProvidersWithStatus(target string) *loader.ProviderLoadResult {
 
 func loadAuthenticatedProviders(target string) (map[string]provider.Provider, error) {
 	target = provider.ResolveProviderName(target)
-	result := loadProvidersWithStatus(target)
+	result := loadProvidersWithStatusFunc(target)
 	if target == "" {
 		return result.Providers, nil
 	}

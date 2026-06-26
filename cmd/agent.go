@@ -260,7 +260,7 @@ func runAgentSchemas(_ *cobra.Command, _ []string) error {
 			},
 			{
 				"name":        "taskbridge.today.v1",
-				"description": "Daily workbench data model. Sections: must_do, at_risk, suggested_next, project_next. Summary counts per section.",
+				"description": "Cross-provider daily hub data model. Sections: work, life, inbox, overdue, recommended_next, sync_warnings. Task entries preserve source and domain metadata.",
 				"commands":    []string{"today", "demo today", "next"},
 			},
 			{
